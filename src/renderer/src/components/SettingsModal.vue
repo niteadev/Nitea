@@ -104,6 +104,7 @@ const selectLanguage = (code: string): void => {
     title="Settings"
     :icon="settingsIcon"
     max-width="480px"
+    :allow-overflow="true"
     @close="emit('close')"
   >
     <div class="settings-group">

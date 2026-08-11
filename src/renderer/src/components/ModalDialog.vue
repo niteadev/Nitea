@@ -9,12 +9,14 @@ withDefaults(
     iconColor?: string
     maxWidth?: string
     showClose?: boolean
+    allowOverflow?: boolean
   }>(),
   {
     title: '',
     iconColor: 'var(--color-text)',
     maxWidth: '360px',
-    showClose: true
+    showClose: true,
+    allowOverflow: false
   }
 )
 
@@ -27,7 +29,7 @@ const emit = defineEmits<{
   <Teleport to="body">
     <Transition name="fade">
       <div v-if="isOpen" class="modal-overlay" @click.self="emit('close')">
-        <div class="modal-card" :style="{ maxWidth }">
+        <div class="modal-card" :class="{ 'allow-overflow': allowOverflow }" :style="{ maxWidth }">
           <div class="modal-header">
             <div class="header-left">
               <component :is="icon" v-if="icon" :size="18" class="header-icon" :style="{ color: iconColor }" />
@@ -79,6 +81,10 @@ const emit = defineEmits<{
   overflow: hidden;
   color: var(--color-text);
   font-family: var(--font-body);
+}
+
+.modal-card.allow-overflow {
+  overflow: visible;
 }
 
 [data-theme='light'] .modal-card {
