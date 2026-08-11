@@ -5,6 +5,7 @@ import ModalDialog from './ModalDialog.vue'
 
 defineProps<{
   isOpen: boolean
+  translations?: Record<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -17,26 +18,26 @@ const alertIcon = markRaw(AlertTriangle)
 <template>
   <ModalDialog
     :is-open="isOpen"
-    title="Non-Official Build Warning"
+    :title="translations?.dev_warning_title || 'Non-Official Build Warning'"
     :icon="alertIcon"
     icon-color="#ef4444"
     max-width="360px"
     @close="emit('close')"
   >
     <p class="warning-text">
-      You are running a <strong>development preview / non-official build</strong> of this application.
+      {{ translations?.dev_warning_text || 'You are running a development preview / non-official build of this application.' }}
     </p>
     <ul class="risk-list">
-      <li>Risk of unverified code execution or arbitrary code injection.</li>
-      <li>Unstable features, debug logs, and potential data exposure.</li>
-      <li>Lack of official cryptographic signature and release verification.</li>
+      <li>{{ translations?.dev_warning_risk_1 || 'Risk of unverified code execution or arbitrary code injection.' }}</li>
+      <li>{{ translations?.dev_warning_risk_2 || 'Unstable features, debug logs, and potential data exposure.' }}</li>
+      <li>{{ translations?.dev_warning_risk_3 || 'Lack of official cryptographic signature and release verification.' }}</li>
     </ul>
     <p class="warning-note">
-      Please use official releases for production environments.
+      {{ translations?.dev_warning_note || 'Please use official releases for production environments.' }}
     </p>
 
     <template #footer>
-      <button class="ok-btn" @click="emit('close')">OK</button>
+      <button class="ok-btn" @click="emit('close')">{{ translations?.ok || 'OK' }}</button>
     </template>
   </ModalDialog>
 </template>

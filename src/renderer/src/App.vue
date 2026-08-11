@@ -47,6 +47,13 @@ const fetchTranslations = async (langCode: string): Promise<void> => {
   }
 }
 
+watch(currentLanguage, (newLang) => {
+  if (newLang) {
+    localStorage.setItem('language', newLang)
+    fetchTranslations(newLang)
+  }
+})
+
 // Settings state & tracking
 const countdownSeconds = ref(parseInt(localStorage.getItem('countdownDuration') || '10') || 10)
 const strictMode = ref(localStorage.getItem('strictMode') !== 'false')
@@ -515,7 +522,7 @@ watch(theme, (newTheme) => {
     <!-- Settings Button in top right corner -->
     <button
       class="settings-corner-btn"
-      title="Settings"
+      :title="translations.settings || 'Settings'"
       @click="openSettingsModal"
     >
       <Settings :size="16" />
@@ -540,7 +547,7 @@ watch(theme, (newTheme) => {
             <span v-if="isLoading" key="loading" class="spinner-wrapper">
               <Loader2 :size="18" class="spin-icon" />
             </span>
-            <span v-else-if="isCounting && isHovered" key="abort" class="abort-wrapper" title="Click to abort countdown">
+            <span v-else-if="isCounting && isHovered" key="abort" class="abort-wrapper" :title="translations.click_to_abort || 'Click to abort countdown'">
               <X :size="18" />
             </span>
             <span v-else-if="isCounting" :key="countdownValue">
@@ -557,7 +564,7 @@ watch(theme, (newTheme) => {
           <button
             class="clock-icon-btn"
             :class="{ hidden: isTimePickerOpen }"
-            title="Set Fullscreen Duration (HH:MM:SS)"
+            :title="translations.set_duration || 'Set Fullscreen Duration (HH:MM:SS)'"
             :disabled="isCounting || isLoading"
             @click="isTimePickerOpen = true"
           >
@@ -593,7 +600,7 @@ watch(theme, (newTheme) => {
                 @blur="formatInputs"
               />
             </div>
-            <button class="confirm-time-btn" title="Confirm Duration" @click="confirmTimePicker">
+            <button class="confirm-time-btn" :title="translations.confirm_duration || 'Confirm Duration'" @click="confirmTimePicker">
               <Check :size="14" />
             </button>
           </div>
@@ -620,14 +627,14 @@ watch(theme, (newTheme) => {
 
     <!-- Version & DEV PREVIEW anchored at bottom of page with padding 15px -->
     <footer class="bottom-footer">
-      <div class="version-text">Version {{ version }}</div>
+      <div class="version-text">{{ translations.version || 'Version' }} {{ version }}</div>
       <button
         v-if="isDev"
         class="dev-warning-btn"
-        title="Click for build security warning"
+        :title="translations.dev_preview_tooltip || 'Click for build security warning'"
         @click="isDevWarningOpen = true"
       >
-        DEV PREVIEW
+        {{ translations.dev_preview || 'DEV PREVIEW' }}
       </button>
     </footer>
 
@@ -638,6 +645,7 @@ watch(theme, (newTheme) => {
       :countdown-seconds="countdownSeconds"
       :strict-mode="strictMode"
       :current-language="currentLanguage"
+      :translations="translations"
       @close="closeSettingsModal"
       @update:theme="setTheme"
       @update:countdown-seconds="(val) => (countdownSeconds = val)"
@@ -648,11 +656,13 @@ watch(theme, (newTheme) => {
 
     <CreditsModal
       :is-open="isCreditsOpen"
+      :translations="translations"
       @close="isCreditsOpen = false"
     />
 
     <DevWarningModal
       :is-open="isDevWarningOpen"
+      :translations="translations"
       @close="isDevWarningOpen = false"
     />
 
@@ -662,6 +672,7 @@ watch(theme, (newTheme) => {
       :version-info="updateVersionInfo"
       :is-downloading="isDownloadingUpdate"
       :download-percent="updatePercent"
+      :translations="translations"
       @postpone="postponeUpdate"
       @download="startDownloadUpdate"
     />

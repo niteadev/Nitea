@@ -18,6 +18,7 @@ const props = defineProps<{
   countdownSeconds: number
   strictMode: boolean
   currentLanguage: string
+  translations?: Record<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -101,7 +102,7 @@ const selectLanguage = (code: string): void => {
 <template>
   <ModalDialog
     :is-open="isOpen"
-    title="Settings"
+    :title="translations?.settings || 'Settings'"
     :icon="settingsIcon"
     max-width="480px"
     :allow-overflow="true"
@@ -111,7 +112,7 @@ const selectLanguage = (code: string): void => {
       <!-- Theme Selection -->
       <div class="setting-item">
         <div class="setting-text">
-          <label class="setting-label">Theme</label>
+          <label class="setting-label">{{ translations?.theme || 'Theme' }}</label>
         </div>
         <div class="theme-options">
           <button
@@ -120,7 +121,7 @@ const selectLanguage = (code: string): void => {
             @click="selectTheme('dark')"
           >
             <Moon :size="15" />
-            <span>Dark</span>
+            <span>{{ translations?.dark || 'Dark' }}</span>
             <Check v-if="theme === 'dark'" :size="14" class="check-icon" />
           </button>
 
@@ -130,7 +131,7 @@ const selectLanguage = (code: string): void => {
             @click="selectTheme('light')"
           >
             <Sun :size="15" />
-            <span>Light</span>
+            <span>{{ translations?.light || 'Light' }}</span>
             <Check v-if="theme === 'light'" :size="14" class="check-icon" />
           </button>
         </div>
@@ -139,8 +140,8 @@ const selectLanguage = (code: string): void => {
       <!-- Countdown Duration -->
       <div class="setting-item">
         <div class="setting-text">
-          <label class="setting-label">Start Countdown</label>
-          <span class="setting-desc">Delay duration before entering focus mode</span>
+          <label class="setting-label">{{ translations?.start_countdown || 'Start Countdown' }}</label>
+          <span class="setting-desc">{{ translations?.start_countdown_desc || 'Delay duration before entering focus mode' }}</span>
         </div>
         <div class="countdown-input-wrap">
           <input
@@ -158,8 +159,8 @@ const selectLanguage = (code: string): void => {
       <!-- Strict Mode Toggle Switch -->
       <div class="setting-item">
         <div class="setting-text">
-          <label class="setting-label">Strict Mode</label>
-          <span class="setting-desc">Block emergency exit during focus session</span>
+          <label class="setting-label">{{ translations?.strict_mode || 'Strict Mode' }}</label>
+          <span class="setting-desc">{{ translations?.strict_mode_desc || 'Block emergency exit during focus session' }}</span>
         </div>
         <label class="toggle-switch">
           <input
@@ -174,8 +175,8 @@ const selectLanguage = (code: string): void => {
       <!-- Language Dropdown Selector (NO ICON in label, uses country-flag-icons) -->
       <div v-if="languages.length > 0" class="setting-item language-setting-item">
         <div class="setting-text">
-          <label class="setting-label">Language</label>
-          <span class="setting-desc">Interface language & translation progress</span>
+          <label class="setting-label">{{ translations?.language || 'Language' }}</label>
+          <span class="setting-desc">{{ translations?.language_desc || 'Interface language & translation progress' }}</span>
         </div>
 
         <div ref="dropdownRef" class="lang-dropdown-wrapper">
@@ -236,11 +237,11 @@ const selectLanguage = (code: string): void => {
       <!-- Credits Section -->
       <div class="setting-item credits-row">
         <div class="setting-text">
-          <label class="setting-label">About & Acknowledgments</label>
+          <label class="setting-label">{{ translations?.about_credits || 'About & Acknowledgments' }}</label>
         </div>
         <button class="credits-btn" @click="emit('open-credits')">
           <Heart :size="14" class="heart-icon" />
-          <span>View Credits</span>
+          <span>{{ translations?.view_credits || 'View Credits' }}</span>
         </button>
       </div>
     </div>

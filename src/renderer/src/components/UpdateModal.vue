@@ -10,6 +10,7 @@ withDefaults(
     versionInfo: { version: string; releaseNotes: string } | null
     isDownloading: boolean
     downloadPercent: number
+    translations?: Record<string, string>
   }>(),
   {
     currentVersion: '1.0.0'
@@ -27,7 +28,7 @@ const updateIcon = markRaw(Download)
 <template>
   <ModalDialog
     :is-open="isOpen"
-    title="Update Available"
+    :title="translations?.update_available || 'Update Available'"
     :icon="updateIcon"
     icon-color="#3b82f6"
     max-width="440px"
@@ -36,7 +37,7 @@ const updateIcon = markRaw(Download)
     <div class="update-content">
       <!-- Description under title -->
       <p class="update-desc">
-        A new version of <strong>Nitea</strong> is ready for installation.
+        {{ translations?.update_desc || 'A new version of Nitea is ready for installation.' }}
       </p>
 
 
@@ -48,14 +49,14 @@ const updateIcon = markRaw(Download)
 
       <!-- Scrollable Release Notes Box -->
       <div v-if="versionInfo?.releaseNotes" class="release-notes-box">
-        <div class="notes-title">Release Notes</div>
+        <div class="notes-title">{{ translations?.release_notes || 'Release Notes' }}</div>
         <div class="notes-body scrollable-notes">{{ versionInfo.releaseNotes }}</div>
       </div>
 
       <!-- Download Progress Bar -->
       <div v-if="isDownloading" class="progress-section">
         <div class="progress-header">
-          <span>Downloading Update...</span>
+          <span>{{ translations?.downloading_update || 'Downloading Update...' }}</span>
           <span>{{ Math.round(downloadPercent) }}%</span>
         </div>
         <div class="progress-bar-bg">
@@ -68,18 +69,18 @@ const updateIcon = markRaw(Download)
       <div v-if="!isDownloading" class="update-actions">
         <button class="postpone-btn" @click="emit('postpone')">
           <Clock :size="14" />
-          <span>Postpone</span>
+          <span>{{ translations?.postpone || 'Postpone' }}</span>
         </button>
 
         <button class="download-btn" @click="emit('download')">
           <Download :size="14" />
-          <span>Download and install</span>
+          <span>{{ translations?.download_and_install || 'Download and install' }}</span>
         </button>
       </div>
 
       <div v-else class="downloading-status">
         <Loader2 :size="16" class="spin-icon" />
-        <span>The update will be installed after download...</span>
+        <span>{{ translations?.update_installing_status || 'The update will be installed after download...' }}</span>
       </div>
     </template>
   </ModalDialog>

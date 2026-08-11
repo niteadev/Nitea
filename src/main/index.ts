@@ -10,6 +10,39 @@ import icon from '../../resources/icon.png?asset'
 
 autoUpdater.autoDownload = false
 
+function loadEnvFile(fileName: string): void {
+  const filePath = join(process.cwd(), fileName)
+  if (!existsSync(filePath)) return
+
+  try {
+    const content = readFileSync(filePath, 'utf8')
+    content.split(/\r?\n/).forEach((line) => {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) return
+      const equalIndex = trimmed.indexOf('=')
+      if (equalIndex === -1) return
+
+      const key = trimmed.slice(0, equalIndex).trim()
+      if (!key || process.env[key]) return
+
+      let value = trimmed.slice(equalIndex + 1).trim()
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1)
+      }
+
+      process.env[key] = value
+    })
+  } catch (e) {
+    console.error(`Failed to load env file ${fileName}:`, e)
+  }
+}
+
+loadEnvFile('.env.local')
+loadEnvFile('.env')
+
 const forceStandardMode = process.argv.includes('--mode=standard')
 const isDevMode = is.dev && !forceStandardMode
 
@@ -340,7 +373,19 @@ function normalizeCrowdinLanguageCode(code?: string): string {
 async function fetchCrowdinLanguages(): Promise<Array<{ code: string; country?: string; name: string; completion: number }> | null> {
   const projectId = process.env['CROWDIN_PROJECT_ID']
   const token = process.env['CROWDIN_PERSONAL_TOKEN']
-  if (!projectId || !token) return null
+  const baseUrl = (process.env['CROWDIN_BASE_URL'] || 'https://api.crowdin.com').replace(/\/+$/, '')
+
+  console.log('[Crowdin] Credentials check:', {
+    projectId: projectId || 'MISSING',
+    tokenPresent: Boolean(token),
+    baseUrl,
+    tokenPrefix: token ? `${token.substring(0, 4)}...` : 'NONE'
+  })
+
+  if (!projectId || !token) {
+    console.warn('[Crowdin] Missing CROWDIN_PROJECT_ID or CROWDIN_PERSONAL_TOKEN environment variables.')
+    return null
+  }
 
   try {
     const headers = {
@@ -348,47 +393,49 @@ async function fetchCrowdinLanguages(): Promise<Array<{ code: string; country?: 
       'Content-Type': 'application/json'
     }
 
-    const [languagesRes, progressRes] = await Promise.all([
-      fetch(`https://api.crowdin.com/api/v2/projects/${projectId}/languages`, { headers }),
-      fetch(`https://api.crowdin.com/api/v2/projects/${projectId}/languages/progress`, { headers })
-    ])
+    console.log(`[Crowdin] Fetching language progress for project ${projectId} from ${baseUrl}...`)
 
-    if (!languagesRes.ok || !progressRes.ok) return null
+    const progressRes = await fetch(`${baseUrl}/api/v2/projects/${projectId}/languages/progress`, { headers })
 
-    const languagesData = (await languagesRes.json())?.data ?? []
-    const progressData = (await progressRes.json())?.data ?? []
+    if (progressRes.ok) {
+      const progressJson = await progressRes.json()
+      const progressData = Array.isArray(progressJson?.data) ? progressJson.data : []
 
-    const progressMap = new Map<string, number>()
-    progressData.forEach((entry: any) => {
-      const data = entry?.data ?? entry
-      const languageId = data?.languageId ?? data?.language?.id ?? data?.code ?? data?.id
-      const progress = Number(
-        data?.translationProgress ?? data?.progress ?? data?.completion ?? data?.approvalProgress ?? 0
-      )
-      if (languageId) {
-        progressMap.set(String(languageId), Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : 0)
+      if (progressData.length > 0) {
+        const languages = progressData.map((entry: any) => {
+          const data = entry?.data ?? entry
+          const langObj = data?.language ?? {}
+          const rawId = data?.languageId ?? langObj?.id ?? data?.code ?? 'en'
+          const code = normalizeCrowdinLanguageCode(rawId)
+          const name = langObj?.name ?? data?.name ?? code
+          const completion = Number(
+            data?.translationProgress ?? data?.progress ?? data?.completion ?? data?.approvalProgress ?? 0
+          )
+          const locale = String(langObj?.locale || langObj?.countryCode || code.split('-')[1] || '').toUpperCase()
+          const countryCode = locale.includes('-') ? locale.split('-')[1] : locale
+
+          return {
+            code,
+            country: countryCode || undefined,
+            name,
+            completion: Number.isFinite(completion) ? Math.max(0, Math.min(100, completion)) : 0
+          }
+        })
+
+        console.log(`[Crowdin] Successfully fetched ${languages.length} languages from progress API.`)
+        return languages
       }
-    })
+    } else {
+      console.error('[Crowdin] Progress API error:', {
+        status: progressRes.status,
+        statusText: progressRes.statusText,
+        body: await progressRes.text().catch(() => '')
+      })
+    }
 
-    return languagesData.map((entry: any) => {
-      const data = entry?.data ?? entry
-      const code = normalizeCrowdinLanguageCode(data?.languageId ?? data?.code ?? data?.locale ?? 'en')
-      const languageName = data?.name ?? data?.fullName ?? code
-      const completion =
-        progressMap.get(code) ??
-        progressMap.get(String(data?.languageId ?? data?.code ?? '')) ??
-        0
-      const countryCode = String(data?.countryCode || data?.locale || code.split('-')[1] || '').toUpperCase()
-
-      return {
-        code,
-        country: countryCode || undefined,
-        name: languageName,
-        completion
-      }
-    })
+    return null
   } catch (e) {
-    console.error('Failed to fetch languages from Crowdin:', e)
+    console.error('[Crowdin] Exception caught during fetch:', e)
     return null
   }
 }
@@ -396,27 +443,114 @@ async function fetchCrowdinLanguages(): Promise<Array<{ code: string; country?: 
 ipcMain.handle('fetch-languages', async () => {
   const crowdinLanguages = await fetchCrowdinLanguages()
   if (Array.isArray(crowdinLanguages) && crowdinLanguages.length > 0) {
+    console.log(`[Crowdin] Returning ${crowdinLanguages.length} dynamic Crowdin languages.`)
     return crowdinLanguages
   }
 
+  console.warn('[Crowdin] Falling back to local hardcoded languages file (languages.json).')
   const localFile = join(process.cwd(), 'src', 'renderer', 'src', 'locales', 'languages.json')
   const localLanguages = readLocalJsonFile(localFile)
   return Array.isArray(localLanguages) ? localLanguages : []
 })
 
+async function fetchCrowdinLocaleStrings(langCode: string): Promise<Record<string, unknown> | null> {
+  const projectId = process.env['CROWDIN_PROJECT_ID']
+  const token = process.env['CROWDIN_PERSONAL_TOKEN']
+  const baseUrl = (process.env['CROWDIN_BASE_URL'] || 'https://api.crowdin.com').replace(/\/+$/, '')
+  if (!projectId || !token || !langCode) return null
+
+  try {
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+
+    console.log(`[Crowdin] Fetching translation strings for '${langCode}' (project ${projectId})...`)
+
+    // 1. Get project files list
+    const filesRes = await fetch(`${baseUrl}/api/v2/projects/${projectId}/files`, { headers }).catch(() => null)
+    if (filesRes && filesRes.ok) {
+      const filesData = (await filesRes.json())?.data ?? []
+      console.log(`[Crowdin] Found ${filesData.length} project files.`)
+
+      for (const item of filesData) {
+        const fileObj = item?.data ?? item
+        const fileId = fileObj?.id
+        if (fileId) {
+          console.log(`[Crowdin] Building file translation for file ${fileId} (${fileObj?.name || 'unknown'}), language: ${langCode}...`)
+          const buildRes = await fetch(`${baseUrl}/api/v2/projects/${projectId}/translations/builds/files/${fileId}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ targetLanguageId: langCode })
+          })
+
+          if (buildRes.ok) {
+            const buildData = await buildRes.json()
+            const downloadUrl = buildData?.data?.url
+            if (downloadUrl) {
+              const fileRes = await fetch(downloadUrl)
+              if (fileRes.ok) {
+                const json = await fileRes.json()
+                if (json && typeof json === 'object') {
+                  console.log(`[Crowdin] Successfully loaded translated JSON for '${langCode}' (file ${fileId}).`)
+                  return json
+                }
+              }
+            }
+          } else {
+            console.warn('[Crowdin] Single file build status:', buildRes.status, await buildRes.text().catch(() => ''))
+          }
+        }
+      }
+    } else if (filesRes) {
+      console.warn('[Crowdin] Project files listing status:', filesRes.status, await filesRes.text().catch(() => ''))
+    }
+
+    // 2. Fallback: Project-level build creation
+    const projectBuildRes = await fetch(`${baseUrl}/api/v2/projects/${projectId}/translations/builds`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ targetLanguageId: langCode })
+    })
+
+    if (projectBuildRes.ok) {
+      const buildJson = await projectBuildRes.json()
+      const buildId = buildJson?.data?.id
+      if (buildId) {
+        const downloadRes = await fetch(`${baseUrl}/api/v2/projects/${projectId}/translations/builds/${buildId}/download`, { headers })
+        if (downloadRes.ok) {
+          const downloadData = await downloadRes.json()
+          console.log(`[Crowdin] Project build ${buildId} completed. Download URL:`, downloadData?.data?.url ? 'FOUND' : 'NOT FOUND')
+        }
+      }
+    } else {
+      console.warn('[Crowdin] Project build API status:', projectBuildRes.status, await projectBuildRes.text().catch(() => ''))
+    }
+  } catch (e) {
+    console.warn(`[Crowdin] Could not fetch dynamic strings for '${langCode}':`, e)
+  }
+
+  return null
+}
+
 ipcMain.handle('fetch-locale-strings', async (_, langCode: string) => {
   const normalizedCode = String(langCode || 'en').trim() || 'en'
+  const enLocalFile = join(process.cwd(), 'src', 'renderer', 'src', 'locales', 'en.json')
+  const enParsed = (readLocalJsonFile(enLocalFile) as Record<string, string>) || {}
 
-  const localCandidates = [
-    join(process.cwd(), 'src', 'renderer', 'src', 'locales', `${normalizedCode}.json`),
-    join(process.cwd(), 'src', 'renderer', 'src', 'locales', 'en.json')
-  ]
+  if (normalizedCode === 'en') {
+    return enParsed
+  }
 
-  for (const filePath of localCandidates) {
-    const parsed = readLocalJsonFile(filePath)
-    if (parsed && typeof parsed === 'object') {
-      return parsed
-    }
+  const specificLocalFile = join(process.cwd(), 'src', 'renderer', 'src', 'locales', `${normalizedCode}.json`)
+  const localParsed = readLocalJsonFile(specificLocalFile) as Record<string, string> | null
+  if (localParsed && typeof localParsed === 'object') {
+    return { ...enParsed, ...localParsed }
+  }
+
+  const crowdinStrings = await fetchCrowdinLocaleStrings(normalizedCode) as Record<string, string> | null
+  if (crowdinStrings && typeof crowdinStrings === 'object') {
+    return { ...enParsed, ...crowdinStrings }
   }
 
   try {
@@ -424,13 +558,16 @@ ipcMain.handle('fetch-locale-strings', async (_, langCode: string) => {
     const targetUrl = `https://raw.githubusercontent.com/niteadev/niteaassets/main/i18n/${normalizedCode}.json${cacheBust}`
     const res = await fetch(targetUrl, { cache: 'no-store' })
     if (res.ok) {
-      return await res.json()
+      const remoteJson = await res.json()
+      if (remoteJson && typeof remoteJson === 'object') {
+        return { ...enParsed, ...remoteJson }
+      }
     }
   } catch (e) {
     console.error(`Failed to fetch locale strings for ${normalizedCode}:`, e)
   }
 
-  return null
+  return enParsed
 })
 
 // Fetch App Box JSON in main process safely

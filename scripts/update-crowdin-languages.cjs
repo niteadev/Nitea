@@ -68,40 +68,24 @@ function countryFromCode(code) {
 }
 
 async function main() {
-  const [languagesResponse, progressResponse] = await Promise.all([
-    crowdinRequest(`/projects/${projectId}/languages`),
-    crowdinRequest(`/projects/${projectId}/languages/progress`)
-  ])
-
-  const languageRecords = Array.isArray(languagesResponse?.data) ? languagesResponse.data : []
+  const progressResponse = await crowdinRequest(`/projects/${projectId}/languages/progress`)
   const progressRecords = Array.isArray(progressResponse?.data) ? progressResponse.data : []
 
-  const progressMap = new Map()
-  for (const entry of progressRecords) {
+  const normalized = progressRecords.map((entry) => {
     const data = entry?.data ?? entry
-    const rawCode = data?.languageId ?? data?.language?.id ?? data?.code ?? data?.id
-    const progress = Number(
+    const langObj = data?.language ?? {}
+    const rawId = data?.languageId ?? langObj?.id ?? data?.code ?? 'en'
+    const code = normalizeLanguageCode(rawId)
+    const name = langObj?.name ?? data?.name ?? code
+    const completion = Number(
       data?.translationProgress ?? data?.progress ?? data?.completion ?? data?.approvalProgress ?? 0
     )
-    if (rawCode) {
-      progressMap.set(String(rawCode), Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : 0)
-    }
-  }
-
-  const normalized = languageRecords.map((entry) => {
-    const data = entry?.data ?? entry
-    const code = normalizeLanguageCode(data?.languageId ?? data?.code ?? data?.locale ?? 'en')
-    const name = data?.name ?? data?.fullName ?? code
-    const completion =
-      progressMap.get(code) ??
-      progressMap.get(String(data?.languageId ?? data?.code ?? '')) ??
-      0
 
     return {
       code,
-      country: countryFromCode(code),
+      country: countryFromCode(langObj?.locale || code),
       name,
-      completion
+      completion: Number.isFinite(completion) ? Math.max(0, Math.min(100, completion)) : 0
     }
   })
 
