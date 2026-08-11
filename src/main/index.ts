@@ -481,7 +481,7 @@ async function fetchCrowdinLocaleStrings(langCode: string): Promise<Record<strin
           const buildRes = await fetch(`${baseUrl}/api/v2/projects/${projectId}/translations/builds/files/${fileId}`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ targetLanguageId: langCode })
+            body: JSON.stringify({ targetLanguageId: langCode, exportApprovedOnly: false })
           })
 
           if (buildRes.ok) {
@@ -533,40 +533,74 @@ async function fetchCrowdinLocaleStrings(langCode: string): Promise<Record<strin
   return null
 }
 
+function logLocaleComparison(langCode: string, enKeys: string[], targetStrings: Record<string, string>): void {
+  const targetKeys = Object.keys(targetStrings || {})
+  const missingKeys = enKeys.filter((k) => !targetKeys.includes(k) || !targetStrings[k])
+  const presentKeys = enKeys.filter((k) => targetKeys.includes(k) && Boolean(targetStrings[k]))
+
+  console.log(`[i18n] === Locale Strings Report for '${langCode}' ===`)
+  console.log(`[i18n] Total Base (en.json) Keys: ${enKeys.length}`)
+  console.log(`[i18n] Present & Translated Keys (${presentKeys.length}):`, targetStrings)
+  if (missingKeys.length > 0) {
+    console.warn(`[i18n] Missing / Un-translated Keys (${missingKeys.length}):`, missingKeys)
+  } else {
+    console.log(`[i18n] All base keys are translated for '${langCode}'!`)
+  }
+  console.log(`[i18n] ==============================================`)
+}
+
 ipcMain.handle('fetch-locale-strings', async (_, langCode: string) => {
   const normalizedCode = String(langCode || 'en').trim() || 'en'
   const enLocalFile = join(process.cwd(), 'src', 'renderer', 'src', 'locales', 'en.json')
   const enParsed = (readLocalJsonFile(enLocalFile) as Record<string, string>) || {}
+  const enKeys = Object.keys(enParsed)
 
   if (normalizedCode === 'en') {
+    logLocaleComparison('en', enKeys, enParsed)
     return enParsed
   }
+
+  let rawTargetStrings: Record<string, string> | null = null
 
   const specificLocalFile = join(process.cwd(), 'src', 'renderer', 'src', 'locales', `${normalizedCode}.json`)
   const localParsed = readLocalJsonFile(specificLocalFile) as Record<string, string> | null
   if (localParsed && typeof localParsed === 'object') {
-    return { ...enParsed, ...localParsed }
+    rawTargetStrings = localParsed
+    console.log(`[i18n] Loaded '${normalizedCode}' from local file: ${specificLocalFile}`)
   }
 
-  const crowdinStrings = await fetchCrowdinLocaleStrings(normalizedCode) as Record<string, string> | null
-  if (crowdinStrings && typeof crowdinStrings === 'object') {
-    return { ...enParsed, ...crowdinStrings }
-  }
-
-  try {
-    const cacheBust = `?_t=${Date.now()}`
-    const targetUrl = `https://raw.githubusercontent.com/niteadev/niteaassets/main/i18n/${normalizedCode}.json${cacheBust}`
-    const res = await fetch(targetUrl, { cache: 'no-store' })
-    if (res.ok) {
-      const remoteJson = await res.json()
-      if (remoteJson && typeof remoteJson === 'object') {
-        return { ...enParsed, ...remoteJson }
-      }
+  if (!rawTargetStrings) {
+    const crowdinStrings = (await fetchCrowdinLocaleStrings(normalizedCode)) as Record<string, string> | null
+    if (crowdinStrings && typeof crowdinStrings === 'object') {
+      rawTargetStrings = crowdinStrings
+      console.log(`[i18n] Loaded '${normalizedCode}' from Crowdin API.`)
     }
-  } catch (e) {
-    console.error(`Failed to fetch locale strings for ${normalizedCode}:`, e)
   }
 
+  if (!rawTargetStrings) {
+    try {
+      const cacheBust = `?_t=${Date.now()}`
+      const targetUrl = `https://raw.githubusercontent.com/niteadev/niteaassets/main/i18n/${normalizedCode}.json${cacheBust}`
+      const res = await fetch(targetUrl, { cache: 'no-store' })
+      if (res.ok) {
+        const remoteJson = await res.json()
+        if (remoteJson && typeof remoteJson === 'object') {
+          rawTargetStrings = remoteJson
+          console.log(`[i18n] Loaded '${normalizedCode}' from remote niteaassets repository.`)
+        }
+      }
+    } catch (e) {
+      console.error(`Failed to fetch locale strings for ${normalizedCode}:`, e)
+    }
+  }
+
+  if (rawTargetStrings) {
+    logLocaleComparison(normalizedCode, enKeys, rawTargetStrings)
+    return { ...enParsed, ...rawTargetStrings }
+  }
+
+  console.warn(`[i18n] No strings found for '${normalizedCode}'. Using en.json fallbacks entirely.`)
+  logLocaleComparison(normalizedCode, enKeys, {})
   return enParsed
 })
 

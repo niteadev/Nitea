@@ -38,9 +38,11 @@ const translations = ref<Record<string, string>>({})
 
 const fetchTranslations = async (langCode: string): Promise<void> => {
   try {
+    console.log(`[App] Requesting locale strings for language: '${langCode}'...`)
     const res = await window.electron.ipcRenderer.invoke('fetch-locale-strings', langCode)
     if (res && typeof res === 'object') {
       translations.value = res
+      console.log(`[App] Applied ${Object.keys(res).length} locale strings to UI for '${langCode}':`, res)
     }
   } catch (e) {
     console.error(`Failed to load translations for ${langCode}:`, e)

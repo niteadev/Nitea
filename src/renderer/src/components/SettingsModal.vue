@@ -1,3 +1,5 @@
+<!-- eslint-disable prettier/prettier -->
+
 <script setup lang="ts">
 import { ref, computed, markRaw, onMounted, onUnmounted } from 'vue'
 import { Sun, Moon, Check, Settings, Heart, ChevronDown } from '@lucide/vue'
