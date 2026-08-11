@@ -22,7 +22,11 @@
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
-    "@electron-toolkit/utils": "^3.0.0"
+    "@electron-toolkit/utils": "^3.0.0",
+    "@lucide/vue": "^1.31.0",
+    "country-flag-icons": "^1.6.20",
+    "electron-updater": "^6.8.9",
+    "lucide-vue-next": "^1.0.0"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config": "^1.0.2",

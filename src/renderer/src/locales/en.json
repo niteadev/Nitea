@@ -1,0 +1,17 @@
+{
+  "app_name": "Nitea",
+  "header_title": "Unleash Your Potential. Master Your Focus.",
+  "start_now": "Start Now",
+  "settings": "Settings",
+  "theme": "Theme",
+  "dark": "Dark",
+  "light": "Light",
+  "start_countdown": "Start Countdown",
+  "start_countdown_desc": "Delay duration before entering focus mode",
+  "strict_mode": "Strict Mode",
+  "strict_mode_desc": "Block emergency exit during focus session",
+  "language": "Language",
+  "language_desc": "Interface language & translation progress",
+  "about_credits": "About & Acknowledgments",
+  "view_credits": "View Credits"
+}
