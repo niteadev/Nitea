@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, markRaw, onMounted, onUnmounted } from 'vue'
 import { Sun, Moon, Check, Settings, Heart, ChevronDown } from '@lucide/vue'
-import flags from 'country-flag-icons/string/3x2'
+import * as flags from 'country-flag-icons/string/3x2'
+import languageCatalog from '../locales/languages.json'
 import ModalDialog from './ModalDialog.vue'
 
 export interface LanguageItem {
@@ -46,14 +47,17 @@ const selectedLanguageItem = computed(() => {
 const fetchLanguagesList = async (): Promise<void> => {
   try {
     const list = await window.electron.ipcRenderer.invoke('fetch-languages')
-    if (Array.isArray(list)) {
+    if (Array.isArray(list) && list.length > 0) {
       languages.value = list
+      isLoadingLanguages.value = false
+      return
     }
   } catch (e) {
     console.error('Error fetching languages list:', e)
-  } finally {
-    isLoadingLanguages.value = false
   }
+
+  languages.value = languageCatalog as LanguageItem[]
+  isLoadingLanguages.value = false
 }
 
 onMounted(() => {

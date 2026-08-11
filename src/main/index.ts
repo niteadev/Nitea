@@ -313,7 +313,7 @@ ipcMain.handle('save-focus-session', (_, session: FocusSessionLog) => {
   return true
 })
 
-// IPC Handlers for Internationalization (i18n) Translations from GitHub (STRICTLY NO HARDCODED DATA)
+// IPC Handlers for Internationalization (i18n) Translations from Crowdin or repo fallback
 try {
   ipcMain.removeHandler('fetch-languages')
   ipcMain.removeHandler('fetch-locale-strings')
@@ -321,32 +321,116 @@ try {
   // ignore
 }
 
-ipcMain.handle('fetch-languages', async () => {
+function readLocalJsonFile(filePath: string): unknown | null {
   try {
-    const cacheBust = `?_t=${Date.now()}`
-    const targetUrl = `https://raw.githubusercontent.com/niteadev/niteaassets/main/i18n/languages.json${cacheBust}`
-    const res = await fetch(targetUrl, { cache: 'no-store' })
-    if (res.ok) {
-      return await res.json()
-    }
+    if (!existsSync(filePath)) return null
+    return JSON.parse(readFileSync(filePath, 'utf8'))
   } catch (e) {
-    console.error('Failed to fetch languages list:', e)
+    console.error(`Failed to read local JSON file: ${filePath}`, e)
+    return null
   }
-  return [] // STRICTLY NO HARDCODED DATA
+}
+
+function normalizeCrowdinLanguageCode(code?: string): string {
+  const raw = String(code || '').trim()
+  if (!raw) return 'en'
+  return raw.replace(/_/g, '-').replace(/-\w+$/i, (match) => match.toLowerCase())
+}
+
+async function fetchCrowdinLanguages(): Promise<Array<{ code: string; country?: string; name: string; completion: number }> | null> {
+  const projectId = process.env['CROWDIN_PROJECT_ID']
+  const token = process.env['CROWDIN_PERSONAL_TOKEN']
+  if (!projectId || !token) return null
+
+  try {
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+
+    const [languagesRes, progressRes] = await Promise.all([
+      fetch(`https://api.crowdin.com/api/v2/projects/${projectId}/languages`, { headers }),
+      fetch(`https://api.crowdin.com/api/v2/projects/${projectId}/languages/progress`, { headers })
+    ])
+
+    if (!languagesRes.ok || !progressRes.ok) return null
+
+    const languagesData = (await languagesRes.json())?.data ?? []
+    const progressData = (await progressRes.json())?.data ?? []
+
+    const progressMap = new Map<string, number>()
+    progressData.forEach((entry: any) => {
+      const data = entry?.data ?? entry
+      const languageId = data?.languageId ?? data?.language?.id ?? data?.code ?? data?.id
+      const progress = Number(
+        data?.translationProgress ?? data?.progress ?? data?.completion ?? data?.approvalProgress ?? 0
+      )
+      if (languageId) {
+        progressMap.set(String(languageId), Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : 0)
+      }
+    })
+
+    return languagesData.map((entry: any) => {
+      const data = entry?.data ?? entry
+      const code = normalizeCrowdinLanguageCode(data?.languageId ?? data?.code ?? data?.locale ?? 'en')
+      const languageName = data?.name ?? data?.fullName ?? code
+      const completion =
+        progressMap.get(code) ??
+        progressMap.get(String(data?.languageId ?? data?.code ?? '')) ??
+        0
+      const countryCode = String(data?.countryCode || data?.locale || code.split('-')[1] || '').toUpperCase()
+
+      return {
+        code,
+        country: countryCode || undefined,
+        name: languageName,
+        completion
+      }
+    })
+  } catch (e) {
+    console.error('Failed to fetch languages from Crowdin:', e)
+    return null
+  }
+}
+
+ipcMain.handle('fetch-languages', async () => {
+  const crowdinLanguages = await fetchCrowdinLanguages()
+  if (Array.isArray(crowdinLanguages) && crowdinLanguages.length > 0) {
+    return crowdinLanguages
+  }
+
+  const localFile = join(process.cwd(), 'src', 'renderer', 'src', 'locales', 'languages.json')
+  const localLanguages = readLocalJsonFile(localFile)
+  return Array.isArray(localLanguages) ? localLanguages : []
 })
 
 ipcMain.handle('fetch-locale-strings', async (_, langCode: string) => {
+  const normalizedCode = String(langCode || 'en').trim() || 'en'
+
+  const localCandidates = [
+    join(process.cwd(), 'src', 'renderer', 'src', 'locales', `${normalizedCode}.json`),
+    join(process.cwd(), 'src', 'renderer', 'src', 'locales', 'en.json')
+  ]
+
+  for (const filePath of localCandidates) {
+    const parsed = readLocalJsonFile(filePath)
+    if (parsed && typeof parsed === 'object') {
+      return parsed
+    }
+  }
+
   try {
     const cacheBust = `?_t=${Date.now()}`
-    const targetUrl = `https://raw.githubusercontent.com/niteadev/niteaassets/main/i18n/${langCode}.json${cacheBust}`
+    const targetUrl = `https://raw.githubusercontent.com/niteadev/niteaassets/main/i18n/${normalizedCode}.json${cacheBust}`
     const res = await fetch(targetUrl, { cache: 'no-store' })
     if (res.ok) {
       return await res.json()
     }
   } catch (e) {
-    console.error(`Failed to fetch locale strings for ${langCode}:`, e)
+    console.error(`Failed to fetch locale strings for ${normalizedCode}:`, e)
   }
-  return null // STRICTLY NO HARDCODED DATA
+
+  return null
 })
 
 // Fetch App Box JSON in main process safely
