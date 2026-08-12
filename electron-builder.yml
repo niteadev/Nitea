@@ -12,8 +12,8 @@ files:
 asarUnpack:
   - resources/**
 extraResources:
-  - from: src/renderer/src/locales
-    to: locales
+  - from: src/renderer/src/languages
+    to: languages
 win:
   executableName: Nitea
   target:

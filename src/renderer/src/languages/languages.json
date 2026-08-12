@@ -1,0 +1,44 @@
+[
+  {
+    "code": "ar",
+    "country": "SA",
+    "name": "Arabic",
+    "completion": 0
+  },
+  {
+    "code": "de",
+    "country": "DE",
+    "name": "German",
+    "completion": 0
+  },
+  {
+    "code": "en",
+    "country": "US",
+    "name": "English",
+    "completion": 0
+  },
+  {
+    "code": "es-es",
+    "country": "ES",
+    "name": "Spanish",
+    "completion": 0
+  },
+  {
+    "code": "it",
+    "country": "IT",
+    "name": "Italian",
+    "completion": 1
+  },
+  {
+    "code": "pt-pt",
+    "country": "PT",
+    "name": "Portuguese",
+    "completion": 0
+  },
+  {
+    "code": "ru",
+    "country": "RU",
+    "name": "Russian",
+    "completion": 0
+  }
+]

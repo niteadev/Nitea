@@ -14,6 +14,7 @@
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "crowdin:sync": "node scripts/update-crowdin-languages.cjs",
+    "crowdin:download": "crowdin download && node scripts/update-crowdin-languages.cjs",
     "build": "npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
@@ -30,6 +31,7 @@
     "lucide-vue-next": "^1.0.0"
   },
   "devDependencies": {
+    "@crowdin/cli": "^4.15.0",
     "@electron-toolkit/eslint-config": "^1.0.2",
     "@electron-toolkit/eslint-config-ts": "^1.0.1",
     "@electron-toolkit/tsconfig": "^1.0.1",

@@ -1,7 +1,7 @@
 /* eslint-disable prettier/prettier */
 import { app, shell, BrowserWindow, ipcMain, globalShortcut, dialog } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { createCipheriv, createDecipheriv, scryptSync, randomBytes } from 'crypto'
 import { exec } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -49,13 +49,28 @@ function loadEnvFile(fileName: string): void {
   }
 }
 
+function saveLocaleFileToLanguages(fileName: string, data: object): void {
+  try {
+    const userLanguagesDir = join(app.getPath('userData'), 'languages')
+    if (!existsSync(userLanguagesDir)) {
+      mkdirSync(userLanguagesDir, { recursive: true })
+    }
+    const targetPath = join(userLanguagesDir, fileName)
+    writeFileSync(targetPath, JSON.stringify(data, null, 2), 'utf8')
+    console.log(`[i18n] Saved downloaded Crowdin file to languages: ${targetPath}`)
+  } catch (e) {
+    console.error(`[i18n] Failed to save locale file ${fileName} to languages:`, e)
+  }
+}
+
 function resolveLocaleFilePath(fileName: string): string {
   const candidates = [
+    join(app.getPath('userData'), 'languages', fileName),
     join(app.getPath('userData'), fileName),
-    join(process.resourcesPath, 'locales', fileName),
+    join(process.resourcesPath, 'languages', fileName),
     join(process.resourcesPath, fileName),
-    join(app.getAppPath(), 'src', 'renderer', 'src', 'locales', fileName),
-    join(process.cwd(), 'src', 'renderer', 'src', 'locales', fileName)
+    join(app.getAppPath(), 'src', 'renderer', 'src', 'languages', fileName),
+    join(process.cwd(), 'src', 'renderer', 'src', 'languages', fileName)
   ]
 
   for (const filePath of candidates) {
@@ -601,6 +616,7 @@ ipcMain.handle('fetch-locale-strings', async (_, langCode: string) => {
     if (crowdinStrings && typeof crowdinStrings === 'object') {
       rawTargetStrings = crowdinStrings
       console.log(`[i18n] Loaded '${normalizedCode}' from Crowdin API.`)
+      saveLocaleFileToLanguages(`${normalizedCode}.json`, crowdinStrings)
     }
   }
 
@@ -610,10 +626,11 @@ ipcMain.handle('fetch-locale-strings', async (_, langCode: string) => {
       const targetUrl = `https://raw.githubusercontent.com/niteadev/niteaassets/main/i18n/${normalizedCode}.json${cacheBust}`
       const res = await fetch(targetUrl, { cache: 'no-store' })
       if (res.ok) {
-        const remoteJson = await res.json()
+        const remoteJson = (await res.json()) as Record<string, string>
         if (remoteJson && typeof remoteJson === 'object') {
           rawTargetStrings = remoteJson
           console.log(`[i18n] Loaded '${normalizedCode}' from remote niteaassets repository.`)
+          saveLocaleFileToLanguages(`${normalizedCode}.json`, remoteJson)
         }
       }
     } catch (e) {

@@ -89,7 +89,11 @@ async function main() {
     }
   })
 
-  const outputPath = path.join(process.cwd(), 'src', 'renderer', 'src', 'locales', 'languages.json')
+  const targetDir = path.join(process.cwd(), 'src', 'renderer', 'src', 'languages')
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true })
+  }
+  const outputPath = path.join(targetDir, 'languages.json')
   fs.writeFileSync(outputPath, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8')
   console.log(`Wrote ${normalized.length} language entries to ${outputPath}`)
 }

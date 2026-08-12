@@ -10,8 +10,8 @@ base_url: https://api.crowdin.com
 
 # File mapping configuration
 files:
-  - source: /src/renderer/src/locales/en.json
-    translation: /src/renderer/src/locales/%two_letters_code%.json
+  - source: /src/renderer/src/languages/en.json
+    translation: /src/renderer/src/languages/%two_letters_code%.json
     type: json
     multilingual: false
 

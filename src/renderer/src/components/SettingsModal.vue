@@ -4,7 +4,7 @@
 import { ref, computed, markRaw, onMounted, onUnmounted } from 'vue'
 import { Sun, Moon, Check, Settings, Heart, ChevronDown } from '@lucide/vue'
 import * as flags from 'country-flag-icons/string/3x2'
-import languageCatalog from '../locales/languages.json'
+import languageCatalog from '../languages/languages.json'
 import ModalDialog from './ModalDialog.vue'
 
 export interface LanguageItem {
