@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: electron-app
+appId: com.nitea.app
+productName: Nitea
 directories:
   buildResources: build
 files:
@@ -11,8 +11,14 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+extraResources:
+  - from: src/renderer/src/locales
+    to: locales
 win:
-  executableName: electron-app
+  executableName: Nitea
+  target:
+    - nsis
+  verifyUpdateCodeSignature: false
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

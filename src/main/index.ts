@@ -11,33 +11,60 @@ import icon from '../../resources/icon.png?asset'
 autoUpdater.autoDownload = false
 
 function loadEnvFile(fileName: string): void {
-  const filePath = join(process.cwd(), fileName)
-  if (!existsSync(filePath)) return
+  const candidates = [
+    join(app.getPath('userData'), fileName),
+    join(process.resourcesPath, fileName),
+    join(app.getAppPath(), fileName),
+    join(process.cwd(), fileName)
+  ]
 
-  try {
-    const content = readFileSync(filePath, 'utf8')
-    content.split(/\r?\n/).forEach((line) => {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('#')) return
-      const equalIndex = trimmed.indexOf('=')
-      if (equalIndex === -1) return
+  for (const filePath of candidates) {
+    if (!existsSync(filePath)) continue
+    try {
+      const content = readFileSync(filePath, 'utf8')
+      content.split(/\r?\n/).forEach((line) => {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) return
+        const equalIndex = trimmed.indexOf('=')
+        if (equalIndex === -1) return
 
-      const key = trimmed.slice(0, equalIndex).trim()
-      if (!key || process.env[key]) return
+        const key = trimmed.slice(0, equalIndex).trim()
+        if (!key || process.env[key]) return
 
-      let value = trimmed.slice(equalIndex + 1).trim()
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      ) {
-        value = value.slice(1, -1)
-      }
+        let value = trimmed.slice(equalIndex + 1).trim()
+        if (
+          (value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))
+        ) {
+          value = value.slice(1, -1)
+        }
 
-      process.env[key] = value
-    })
-  } catch (e) {
-    console.error(`Failed to load env file ${fileName}:`, e)
+        process.env[key] = value
+      })
+      console.log(`[Env] Loaded env file '${fileName}' from: ${filePath}`)
+      return
+    } catch (e) {
+      console.error(`Failed to load env file ${filePath}:`, e)
+    }
   }
+}
+
+function resolveLocaleFilePath(fileName: string): string {
+  const candidates = [
+    join(app.getPath('userData'), fileName),
+    join(process.resourcesPath, 'locales', fileName),
+    join(process.resourcesPath, fileName),
+    join(app.getAppPath(), 'src', 'renderer', 'src', 'locales', fileName),
+    join(process.cwd(), 'src', 'renderer', 'src', 'locales', fileName)
+  ]
+
+  for (const filePath of candidates) {
+    if (existsSync(filePath)) {
+      return filePath
+    }
+  }
+
+  return candidates[candidates.length - 1]
 }
 
 loadEnvFile('.env.local')
@@ -448,7 +475,7 @@ ipcMain.handle('fetch-languages', async () => {
   }
 
   console.warn('[Crowdin] Falling back to local hardcoded languages file (languages.json).')
-  const localFile = join(process.cwd(), 'src', 'renderer', 'src', 'locales', 'languages.json')
+  const localFile = resolveLocaleFilePath('languages.json')
   const localLanguages = readLocalJsonFile(localFile)
   return Array.isArray(localLanguages) ? localLanguages : []
 })
@@ -551,7 +578,7 @@ function logLocaleComparison(langCode: string, enKeys: string[], targetStrings: 
 
 ipcMain.handle('fetch-locale-strings', async (_, langCode: string) => {
   const normalizedCode = String(langCode || 'en').trim() || 'en'
-  const enLocalFile = join(process.cwd(), 'src', 'renderer', 'src', 'locales', 'en.json')
+  const enLocalFile = resolveLocaleFilePath('en.json')
   const enParsed = (readLocalJsonFile(enLocalFile) as Record<string, string>) || {}
   const enKeys = Object.keys(enParsed)
 
@@ -562,7 +589,7 @@ ipcMain.handle('fetch-locale-strings', async (_, langCode: string) => {
 
   let rawTargetStrings: Record<string, string> | null = null
 
-  const specificLocalFile = join(process.cwd(), 'src', 'renderer', 'src', 'locales', `${normalizedCode}.json`)
+  const specificLocalFile = resolveLocaleFilePath(`${normalizedCode}.json`)
   const localParsed = readLocalJsonFile(specificLocalFile) as Record<string, string> | null
   if (localParsed && typeof localParsed === 'object') {
     rawTargetStrings = localParsed
