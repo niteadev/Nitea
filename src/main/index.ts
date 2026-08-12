@@ -185,7 +185,8 @@ function isUserAdmin(): boolean {
 function relaunchAsAdmin(): void {
   if (process.platform !== 'win32') return
   const execPath = process.execPath
-  const rawArgs = process.argv.slice(1)
+  const rawArgs = process.argv.slice(1).filter((a) => a !== '--uac-attempted')
+  rawArgs.push('--uac-attempted')
   const argsList = rawArgs.map((a) => `'${a.replace(/'/g, "''")}'`).join(',')
   const psCmd = argsList
     ? `Start-Process -FilePath '${execPath.replace(/'/g, "''")}' -ArgumentList ${argsList} -Verb RunAs`
@@ -366,11 +367,57 @@ function getLocalizedDialogStrings(langCode?: string) {
   }
 }
 
+function isAdminNoticeShown(): boolean {
+  try {
+    const settingsPath = join(app.getPath('userData'), 'settings.json')
+    if (existsSync(settingsPath)) {
+      const parsed = JSON.parse(readFileSync(settingsPath, 'utf8'))
+      if (typeof parsed?.hasShownAdminNotice === 'boolean') {
+        return parsed.hasShownAdminNotice
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  return false
+}
+
+function setAdminNoticeShown(shown: boolean): void {
+  try {
+    const settingsPath = join(app.getPath('userData'), 'settings.json')
+    let parsed: Record<string, unknown> = {}
+    if (existsSync(settingsPath)) {
+      try {
+        parsed = JSON.parse(readFileSync(settingsPath, 'utf8'))
+      } catch {
+        parsed = {}
+      }
+    }
+    parsed.hasShownAdminNotice = shown
+    writeFileSync(settingsPath, JSON.stringify(parsed, null, 2), 'utf8')
+  } catch (e) {
+    // ignore
+  }
+}
+
 function checkAdminAndRegistryWithPrompt(parentWin: BrowserWindow | null): boolean {
   if (process.platform !== 'win32') return true
   const isAdmin = isUserAdmin()
-  if (isAdmin) return true
+  if (isAdmin) {
+    return true
+  }
 
+  // Check if UAC was attempted on current launch (user clicked No on UAC prompt)
+  const wasUacAttempted = process.argv.includes('--uac-attempted')
+  const noticeAlreadyShown = isAdminNoticeShown()
+
+  // If notice was already shown AND user did not just reject UAC -> auto restart as admin directly without modal!
+  if (noticeAlreadyShown && !wasUacAttempted) {
+    relaunchAsAdmin()
+    return false
+  }
+
+  // Otherwise (first time OR UAC was denied by user): show info modal (exact unedited text & buttons)
   const dialogStrings = getLocalizedDialogStrings()
   const buttons = [
     dialogStrings.restartAsAdmin,
@@ -380,7 +427,7 @@ function checkAdminAndRegistryWithPrompt(parentWin: BrowserWindow | null): boole
   let choice = 0
   if (parentWin && !parentWin.isDestroyed()) {
     choice = dialog.showMessageBoxSync(parentWin, {
-      type: 'info', // INFO MSGBOX
+      type: 'info', // INFO MSGBOX (LOCALIZED)
       title: dialogStrings.title,
       message: dialogStrings.message,
       detail: dialogStrings.detail,
@@ -402,11 +449,13 @@ function checkAdminAndRegistryWithPrompt(parentWin: BrowserWindow | null): boole
 
   if (choice === 0) {
     // Restart as Administrator
+    setAdminNoticeShown(true)
     relaunchAsAdmin()
     return false
   } else {
     // Disable Strict Mode and continue boot without rebooting
     saveStrictModeSetting(false)
+    setAdminNoticeShown(false)
     return true
   }
 }

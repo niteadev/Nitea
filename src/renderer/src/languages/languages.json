@@ -15,7 +15,7 @@
     "code": "en",
     "country": "US",
     "name": "English",
-    "completion": 0
+    "completion": 100
   },
   {
     "code": "es-es",
@@ -27,7 +27,7 @@
     "code": "it",
     "country": "IT",
     "name": "Italian",
-    "completion": 100
+    "completion": 75
   },
   {
     "code": "pt-pt",
