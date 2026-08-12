@@ -26,6 +26,10 @@ const isDevPanelMode = ref(
   window.location.search.includes('mode=dev-panel') || window.location.hash.includes('dev-panel')
 )
 
+const isSplashMode = ref(
+  window.location.search.includes('mode=splash') || window.location.hash.includes('splash')
+)
+
 const theme = ref<'dark' | 'light'>('dark')
 const isSettingsOpen = ref(false)
 const isDevWarningOpen = ref(false)
@@ -38,14 +42,12 @@ const translations = ref<Record<string, string>>({})
 
 const fetchTranslations = async (langCode: string): Promise<void> => {
   try {
-    console.log(`[App] Requesting locale strings for language: '${langCode}'...`)
     const res = await window.electron.ipcRenderer.invoke('fetch-locale-strings', langCode)
     if (res && typeof res === 'object') {
       translations.value = res
-      console.log(`[App] Applied ${Object.keys(res).length} locale strings to UI for '${langCode}':`, res)
     }
   } catch (e) {
-    console.error(`Failed to load translations for ${langCode}:`, e)
+    // Ignore translation load error
   }
 }
 
@@ -60,50 +62,12 @@ watch(currentLanguage, (newLang) => {
 const countdownSeconds = ref(parseInt(localStorage.getItem('countdownDuration') || '10') || 10)
 const strictMode = ref(localStorage.getItem('strictMode') !== 'false')
 
-const initialSettings = ref({
-  theme: theme.value,
-  countdownSeconds: countdownSeconds.value,
-  strictMode: strictMode.value,
-  currentLanguage: currentLanguage.value
-})
-
-const openSettingsModal = (): void => {
-  initialSettings.value = {
-    theme: theme.value,
-    countdownSeconds: countdownSeconds.value,
-    strictMode: strictMode.value,
-    currentLanguage: currentLanguage.value
-  }
-  isSettingsOpen.value = true
-}
-
-const closeSettingsModal = (): void => {
-  isSettingsOpen.value = false
-  const hasChanged =
-    theme.value !== initialSettings.value.theme ||
-    countdownSeconds.value !== initialSettings.value.countdownSeconds ||
-    strictMode.value !== initialSettings.value.strictMode ||
-    currentLanguage.value !== initialSettings.value.currentLanguage
-
-  if (hasChanged) {
-    localStorage.setItem('theme', theme.value)
-    localStorage.setItem('countdownDuration', String(countdownSeconds.value))
-    localStorage.setItem('strictMode', String(strictMode.value))
-    localStorage.setItem('language', currentLanguage.value)
-
-    fetchTranslations(currentLanguage.value)
-
-    addToast({
-      type: 'success',
-      title: 'Settings Saved',
-      message: 'Your preferences have been updated successfully.',
-      effect: 'confetti'
-    })
-  }
-}
-
 // Toast System State
 const toasts = ref<ToastItem[]>([])
+
+const removeToast = (id: string): void => {
+  toasts.value = toasts.value.filter((t) => t.id !== id)
+}
 
 const addToast = (toast: {
   type: 'error' | 'warning' | 'info' | 'success'
@@ -119,9 +83,98 @@ const addToast = (toast: {
   }, 4000)
 }
 
-const removeToast = (id: string): void => {
-  toasts.value = toasts.value.filter((t) => t.id !== id)
+const openSettingsModal = (): void => {
+  isSettingsOpen.value = true
 }
+
+const closeSettingsModal = (): void => {
+  isSettingsOpen.value = false
+}
+
+const handleThemeUpdate = (newTheme: 'dark' | 'light'): void => {
+  try {
+    setTheme(newTheme)
+    addToast({
+      type: 'success',
+      title: translations.value?.settings_has_been_updated || 'Settings has been updated',
+      message: null
+    })
+  } catch (e) {
+    addToast({
+      type: 'error',
+      title: translations.value?.setting_update_failed || 'Setting Update Failed',
+      message: String(e)
+    })
+  }
+}
+
+const handleCountdownUpdate = (seconds: number): void => {
+  try {
+    countdownSeconds.value = seconds
+    localStorage.setItem('countdownDuration', String(seconds))
+    addToast({
+      type: 'success',
+      title: translations.value?.settings_has_been_updated || 'Settings has been updated',
+      message: null
+    })
+  } catch (e) {
+    addToast({
+      type: 'error',
+      title: translations.value?.setting_update_failed || 'Setting Update Failed',
+      message: String(e)
+    })
+  }
+}
+
+const handleLanguageUpdate = async (langCode: string): Promise<void> => {
+  try {
+    currentLanguage.value = langCode
+    localStorage.setItem('language', langCode)
+    await fetchTranslations(langCode)
+    addToast({
+      type: 'success',
+      title: translations.value?.settings_has_been_updated || 'Settings has been updated',
+      message: null
+    })
+  } catch (e) {
+    addToast({
+      type: 'error',
+      title: translations.value?.setting_update_failed || 'Setting Update Failed',
+      message: String(e)
+    })
+  }
+}
+
+const handleStrictModeUpdate = async (val: boolean): Promise<void> => {
+  try {
+    strictMode.value = val
+    const isValid = await window.electron.ipcRenderer.invoke('validate-strict-mode-admin', val)
+    if (!isValid) {
+      strictMode.value = false
+      localStorage.setItem('strictMode', 'false')
+      addToast({
+        type: 'error',
+        title: translations.value?.settings_save_error || 'Settings save error',
+        message: null
+      })
+    } else {
+      localStorage.setItem('strictMode', String(val))
+      addToast({
+        type: 'success',
+        title: translations.value?.settings_has_been_updated || 'Settings has been updated',
+        message: null
+      })
+    }
+  } catch (e) {
+    addToast({
+      type: 'error',
+      title: translations.value?.settings_save_error || 'Settings save error',
+      message: null
+    })
+  }
+}
+
+
 
 // Parse if running in forced standard mode or dev
 const isDev = ref(import.meta.env.DEV && !window.location.search.includes('mode=standard'))
@@ -326,10 +379,20 @@ const switchToStandardMode = (): void => {
   window.electron.ipcRenderer.send('switch-to-standard-mode')
 }
 
-// Keyboard listener for Fullscreen mode (If strictMode is disabled or in dev, press 'X' to close window)
+// Keyboard listener for Fullscreen mode (Alt+F4 blocked completely; in dev or if strictMode is disabled, press 'X' to close; in DEV MODE ONLY, press 'F' for windowed mode)
 const handleKeyDown = (e: KeyboardEvent): void => {
+  // Block Alt+F4 completely
+  if ((e.altKey && (e.key === 'F4' || e.key === 'f4')) || (e.code === 'F4' && e.altKey)) {
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
+
   if ((!strictMode.value || isDev.value) && (e.key === 'x' || e.key === 'X')) {
     window.electron.ipcRenderer.send('window-close')
+  }
+  if (isDev.value && (e.key === 'f' || e.key === 'F')) {
+    window.electron.ipcRenderer.send('toggle-fullscreen-windowed')
   }
 }
 
@@ -346,11 +409,17 @@ const startDownloadUpdate = (): void => {
 }
 
 onMounted(() => {
+  if (isSplashMode.value) {
+    fetchTranslations(currentLanguage.value)
+    return
+  }
+
   if (isDevPanelMode.value) {
     return
   }
 
   if (isFullscreenMode.value) {
+    fetchTranslations(currentLanguage.value)
     isCheckingUpdate.value = false
     const urlParams = new URLSearchParams(window.location.search)
     const dur = parseInt(urlParams.get('duration') || '10') || 10
@@ -390,6 +459,11 @@ onMounted(() => {
 
   window.electron.ipcRenderer.on('reset-start-button', () => {
     resetStartButton()
+  })
+
+  window.electron.ipcRenderer.on('strict-mode-updated', (_, enabled: boolean) => {
+    strictMode.value = enabled
+    localStorage.setItem('strictMode', String(enabled))
   })
 
   // Toast IPC listener
@@ -449,8 +523,20 @@ watch(theme, (newTheme) => {
   <!-- Toast Notification Container -->
   <ToastNotification :toasts="toasts" />
 
+  <!-- Dedicated Small Borderless Splash Window View -->
+  <div v-if="isSplashMode" class="splash-fullscreen-container">
+    <div class="splash-window-card">
+      <div class="pulse-logo-wrapper">
+        <img :src="icnLight" alt="Nitea" class="pulsing-logo" />
+      </div>
+      <div class="loading-status-text">
+        {{ translations.loading_settings || 'Caricamento impostazioni...' }}
+      </div>
+    </div>
+  </div>
+
   <!-- Dev Control Panel Window (Pure WinForm Style) -->
-  <div v-if="isDevPanelMode" class="dev-panel-container">
+  <div v-else-if="isDevPanelMode" class="dev-panel-container">
     <div class="dev-panel-card">
       <div class="dev-panel-title">Dev Control Panel</div>
       <div class="dev-panel-buttons">
@@ -499,20 +585,6 @@ watch(theme, (newTheme) => {
 
   <!-- Standard App View -->
   <template v-else>
-    <!-- Update Loading Overlay with smooth fade transition to main app -->
-    <Transition name="fade-screen">
-      <div v-if="isCheckingUpdate" class="update-loading-overlay">
-        <!-- Pulsing icn_light in center of screen -->
-        <div class="pulse-logo-wrapper">
-          <img :src="icnLight" alt="Loading..." class="pulsing-logo" />
-        </div>
-
-        <div v-if="!isUpdateAvailable" class="loading-status-text">
-          Checking for updates...
-        </div>
-      </div>
-    </Transition>
-
     <TitleBar title="nitea" :theme="theme" />
 
     <!-- Aurora Glow Effects spanning entire background behind text -->
@@ -649,10 +721,10 @@ watch(theme, (newTheme) => {
       :current-language="currentLanguage"
       :translations="translations"
       @close="closeSettingsModal"
-      @update:theme="setTheme"
-      @update:countdown-seconds="(val) => (countdownSeconds = val)"
-      @update:strict-mode="(val) => (strictMode = val)"
-      @update:current-language="(code) => (currentLanguage = code)"
+      @update:theme="handleThemeUpdate"
+      @update:countdown-seconds="handleCountdownUpdate"
+      @update:strict-mode="handleStrictModeUpdate"
+      @update:current-language="handleLanguageUpdate"
       @open-credits="isCreditsOpen = true"
     />
 
@@ -760,8 +832,8 @@ watch(theme, (newTheme) => {
   border-color: #0078d7;
 }
 
-/* Update Loading Overlay (Launch Screen) */
-.update-loading-overlay {
+/* Dedicated Small Splash Window Container */
+.splash-fullscreen-container {
   position: fixed;
   inset: 0;
   width: 100vw;
@@ -772,11 +844,35 @@ watch(theme, (newTheme) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
 }
 
-[data-theme='light'] .update-loading-overlay {
+[data-theme='light'] .splash-fullscreen-container {
   background-color: var(--zinc-50);
+}
+
+/* Small Splash Window Card (Square-ish, slightly larger height: 320px x 370px) */
+.splash-window-card {
+  width: 320px;
+  height: 370px;
+  border-radius: 0;
+  background-color: rgba(24, 24, 27, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 32px 24px;
+  user-select: none;
+}
+
+[data-theme='light'] .splash-window-card {
+  background-color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
 }
 
 /* Loading Overlay Fade Screen Transition */
@@ -795,20 +891,22 @@ watch(theme, (newTheme) => {
   justify-content: center;
 }
 
+/* Logo Pulsing Opacity ONLY (No scale / zoom-in-out) */
 .pulsing-logo {
-  width: 110px;
-  height: 110px;
+  width: 100px;
+  height: 100px;
   object-fit: contain;
   animation: pulseOpacity 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 @keyframes pulseOpacity {
   0%, 100% {
-    opacity: 0.3;
+    opacity: 0.35;
+    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.15));
   }
   50% {
     opacity: 1;
-    filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.4));
+    filter: drop-shadow(0 0 24px rgba(255, 255, 255, 0.4));
   }
 }
 
@@ -818,6 +916,7 @@ watch(theme, (newTheme) => {
   color: var(--ev-c-text-2);
   letter-spacing: 0.3px;
   font-family: var(--font-body);
+  text-align: center;
 }
 
 /* Fullscreen Black Screen & View */

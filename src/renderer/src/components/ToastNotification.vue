@@ -148,7 +148,7 @@ watch(
   width: 100vw;
   height: 100vh;
   pointer-events: none;
-  z-index: 99998;
+  z-index: 2147483646;
 }
 
 /* Bottom Centered Position */
@@ -157,7 +157,7 @@ watch(
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 99999;
+  z-index: 2147483647;
   display: flex;
   flex-direction: column-reverse;
   align-items: center;

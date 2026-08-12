@@ -1,22 +1,10 @@
-@font-face {
-  font-family: 'HeaderFont';
-  src: url('./fonts/header.ttf') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-}
-
-@font-face {
-  font-family: 'OptimisticFont';
-  src: url('./fonts/optimistic.ttf') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-}
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
   /* Font Variables for quick reuse */
-  --font-header: 'HeaderFont', sans-serif;
-  --font-body: 'OptimisticFont', sans-serif;
-  --font-titlebar: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-header: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-titlebar: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
   /* Theme variables - Zinc Dark (default) */
   --zinc-950: #09090b;

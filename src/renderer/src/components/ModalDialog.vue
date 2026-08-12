@@ -98,6 +98,8 @@ const emit = defineEmits<{
   padding: 16px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   background-color: var(--color-background-soft);
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
 }
 
 [data-theme='light'] .modal-header {
@@ -150,6 +152,8 @@ const emit = defineEmits<{
   font-size: 13px;
   line-height: 1.5;
   color: var(--color-text);
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
 }
 
 .modal-footer {
@@ -160,6 +164,8 @@ const emit = defineEmits<{
   padding: 14px 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   background-color: var(--color-background-soft);
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
 }
 
 [data-theme='light'] .modal-footer {

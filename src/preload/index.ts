@@ -12,7 +12,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
-    console.error(error)
+    // Context isolation error handling
   }
 } else {
   // @ts-ignore (define in dts)

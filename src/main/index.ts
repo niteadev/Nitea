@@ -1,9 +1,9 @@
 /* eslint-disable prettier/prettier */
-import { app, shell, BrowserWindow, ipcMain, globalShortcut, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, globalShortcut, dialog, nativeImage, NativeImage } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { createCipheriv, createDecipheriv, scryptSync, randomBytes } from 'crypto'
-import { exec } from 'child_process'
+import { exec, execSync, spawn, ChildProcess } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
@@ -41,10 +41,9 @@ function loadEnvFile(fileName: string): void {
 
         process.env[key] = value
       })
-      console.log(`[Env] Loaded env file '${fileName}' from: ${filePath}`)
       return
     } catch (e) {
-      console.error(`Failed to load env file ${filePath}:`, e)
+      // Ignore env load error
     }
   }
 }
@@ -57,10 +56,32 @@ function saveLocaleFileToLanguages(fileName: string, data: object): void {
     }
     const targetPath = join(userLanguagesDir, fileName)
     writeFileSync(targetPath, JSON.stringify(data, null, 2), 'utf8')
-    console.log(`[i18n] Saved downloaded Crowdin file to languages: ${targetPath}`)
   } catch (e) {
-    console.error(`[i18n] Failed to save locale file ${fileName} to languages:`, e)
+    // Ignore save error
   }
+}
+
+function getAppIcon(): NativeImage | string {
+  const candidatePaths = [
+    join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'icn_light.png'),
+    join(process.cwd(), 'build', 'icon.png'),
+    join(process.cwd(), 'resources', 'icon.png'),
+    join(app.getAppPath(), 'src', 'renderer', 'src', 'assets', 'icn_light.png'),
+    join(app.getAppPath(), 'build', 'icon.png'),
+    join(app.getAppPath(), 'resources', 'icon.png'),
+    join(process.resourcesPath, 'icon.png')
+  ]
+
+  for (const iconPath of candidatePaths) {
+    if (existsSync(iconPath)) {
+      const img = nativeImage.createFromPath(iconPath)
+      if (!img.isEmpty()) {
+        return img
+      }
+    }
+  }
+
+  return icon
 }
 
 function resolveLocaleFilePath(fileName: string): string {
@@ -148,13 +169,31 @@ function saveFocusSession(log: FocusSessionLog): void {
   writeEncryptedSessions(currentLogs)
 }
 
+let currentAppLanguage = 'en'
+let strictModeHookProcess: ChildProcess | null = null
+
+function isUserAdmin(): boolean {
+  if (process.platform !== 'win32') return true
+  try {
+    execSync('net session', { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
 function relaunchAsAdmin(): void {
   if (process.platform !== 'win32') return
   const execPath = process.execPath
-  const args = process.argv.slice(1).map((a) => `"${a}"`).join(' ')
-  const cmd = `powershell -Command "Start-Process '${execPath}' -ArgumentList '${args}' -Verb RunAs"`
+  const rawArgs = process.argv.slice(1)
+  const argsList = rawArgs.map((a) => `'${a.replace(/'/g, "''")}'`).join(',')
+  const psCmd = argsList
+    ? `Start-Process -FilePath '${execPath.replace(/'/g, "''")}' -ArgumentList ${argsList} -Verb RunAs`
+    : `Start-Process -FilePath '${execPath.replace(/'/g, "''")}' -Verb RunAs`
+
+  const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "${psCmd}"`
   exec(cmd, () => {
-    app.quit()
+    app.exit(0)
   })
 }
 
@@ -162,10 +201,15 @@ function setSystemPoliciesDisabled(disabled: boolean): Promise<boolean> {
   return new Promise((resolve) => {
     if (process.platform !== 'win32') return resolve(true)
     const val = disabled ? 1 : 0
+    const sysPath = `"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System"`
+    const expPath = `"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer"`
+
     const cmds = [
-      `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v DisableTaskMgr /t REG_DWORD /d ${val} /f`,
-      `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v DisableLockWorkstation /t REG_DWORD /d ${val} /f`,
-      `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v DisableChangePassword /t REG_DWORD /d ${val} /f`
+      `reg add ${sysPath} /v DisableTaskMgr /t REG_DWORD /d ${val} /f`,
+      `reg add ${sysPath} /v DisableLockWorkstation /t REG_DWORD /d ${val} /f`,
+      `reg add ${sysPath} /v DisableChangePassword /t REG_DWORD /d ${val} /f`,
+      `reg add ${expPath} /v NoWinKeys /t REG_DWORD /d ${val} /f`,
+      `reg add ${expPath} /v DisableTaskSwitching /t REG_DWORD /d ${val} /f`
     ]
     const fullCmd = cmds.join(' & ')
     exec(fullCmd, (err) => {
@@ -178,7 +222,225 @@ function setSystemPoliciesDisabled(disabled: boolean): Promise<boolean> {
   })
 }
 
+function startStrictModeKeyboardHook(): void {
+  if (process.platform !== 'win32') return
+  stopStrictModeKeyboardHook()
+
+  const psScript = `
+$code = @"
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+
+public class KeyBlocker {
+    private const int WH_KEYBOARD_LL = 13;
+    private const int WM_KEYDOWN = 0x0100;
+    private const int WM_SYSKEYDOWN = 0x0200;
+
+    private static HookProc _proc = HookCallback;
+    private static IntPtr _hookID = IntPtr.Zero;
+
+    public static void Main() {
+        _hookID = SetHook(_proc);
+        Application.Run();
+        UnhookWindowsHookEx(_hookID);
+    }
+
+    private static IntPtr SetHook(HookProc proc) {
+        using (Process curProcess = Process.GetCurrentProcess())
+        using (ProcessModule curModule = curProcess.MainModule) {
+            return SetWindowsHookEx(WH_KEYBOARD_LL, proc, GetModuleHandle(curModule.ModuleName), 0);
+        }
+    }
+
+    private delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
+        if (nCode >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN)) {
+            int vkCode = Marshal.ReadInt32(lParam);
+            bool isWin = (vkCode == 0x5B || vkCode == 0x5C);
+            bool isTab = (vkCode == 0x09);
+            bool isEsc = (vkCode == 0x1B);
+            bool isF4 = (vkCode == 0x73);
+
+            if (isWin || isTab || (isEsc && Control.ModifierKeys.HasFlag(Keys.Control)) || (isF4 && Control.ModifierKeys.HasFlag(Keys.Alt))) {
+                return (IntPtr)1;
+            }
+        }
+        return CallNextHookEx(_hookID, nCode, wParam, lParam);
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, HookProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr GetModuleHandle(string lpModuleName);
+}
+"@
+Add-Type -TypeDefinition $code -ReferencedAssemblies System.Windows.Forms
+[KeyBlocker]::Main()
+`
+
+  try {
+    strictModeHookProcess = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript], {
+      windowsHide: true
+    })
+  } catch (e) {
+    // Ignore hook spawn errors
+  }
+}
+
+function stopStrictModeKeyboardHook(): void {
+  if (strictModeHookProcess) {
+    try {
+      strictModeHookProcess.kill()
+    } catch (e) {
+      // Ignore kill error
+    }
+    strictModeHookProcess = null
+  }
+}
+
+function isStrictModeEnabled(): boolean {
+  try {
+    const settingsPath = join(app.getPath('userData'), 'settings.json')
+    if (existsSync(settingsPath)) {
+      const parsed = JSON.parse(readFileSync(settingsPath, 'utf8'))
+      if (typeof parsed?.strictMode === 'boolean') {
+        return parsed.strictMode
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  return true
+}
+
+function saveStrictModeSetting(enabled: boolean): void {
+  try {
+    const settingsPath = join(app.getPath('userData'), 'settings.json')
+    let parsed: Record<string, unknown> = {}
+    if (existsSync(settingsPath)) {
+      try {
+        parsed = JSON.parse(readFileSync(settingsPath, 'utf8'))
+      } catch {
+        parsed = {}
+      }
+    }
+    parsed.strictMode = enabled
+    writeFileSync(settingsPath, JSON.stringify(parsed, null, 2), 'utf8')
+
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('strict-mode-updated', enabled)
+      }
+    })
+  } catch (e) {
+    // ignore
+  }
+}
+
+function getLocalizedDialogStrings(langCode?: string) {
+  const normalizedCode = String(langCode || currentAppLanguage || 'en').trim() || 'en'
+  const specificFile = resolveLocaleFilePath(`${normalizedCode}.json`)
+  const enFile = resolveLocaleFilePath('en.json')
+
+  const localParsed = (readLocalJsonFile(specificFile) as Record<string, string>) || {}
+  const enParsed = (readLocalJsonFile(enFile) as Record<string, string>) || {}
+
+  return {
+    title: localParsed.registry_update_title || enParsed.registry_update_title || 'Administrator Rights Required',
+    message: localParsed.registry_update_message || enParsed.registry_update_message || 'Administrator rights are required to restrict system policies (Disable Task Manager, Win key, Alt+Tab).',
+    detail: localParsed.registry_update_detail || enParsed.registry_update_detail || 'No registry keys could be updated. The application will restart as Administrator.',
+    restartAsAdmin: localParsed.restart_as_admin || enParsed.restart_as_admin || 'Restart as Administrator',
+    disableStrictMode: localParsed.disable_strict_mode_btn || enParsed.disable_strict_mode_btn || 'Disable Strict Mode',
+    ok: localParsed.ok || enParsed.ok || 'OK'
+  }
+}
+
+function checkAdminAndRegistryWithPrompt(parentWin: BrowserWindow | null): boolean {
+  if (process.platform !== 'win32') return true
+  const isAdmin = isUserAdmin()
+  if (isAdmin) return true
+
+  const dialogStrings = getLocalizedDialogStrings()
+  const buttons = [
+    dialogStrings.restartAsAdmin,
+    dialogStrings.disableStrictMode
+  ]
+
+  let choice = 0
+  if (parentWin && !parentWin.isDestroyed()) {
+    choice = dialog.showMessageBoxSync(parentWin, {
+      type: 'info', // INFO MSGBOX
+      title: dialogStrings.title,
+      message: dialogStrings.message,
+      detail: dialogStrings.detail,
+      buttons,
+      defaultId: 0,
+      cancelId: 1
+    })
+  } else {
+    choice = dialog.showMessageBoxSync({
+      type: 'info',
+      title: dialogStrings.title,
+      message: dialogStrings.message,
+      detail: dialogStrings.detail,
+      buttons,
+      defaultId: 0,
+      cancelId: 1
+    })
+  }
+
+  if (choice === 0) {
+    // Restart as Administrator
+    relaunchAsAdmin()
+    return false
+  } else {
+    // Disable Strict Mode and continue boot without rebooting
+    saveStrictModeSetting(false)
+    return true
+  }
+}
+
+let splashWindow: BrowserWindow | null = null
 let mainWindow: BrowserWindow | null = null
+
+function createSplashWindow(): void {
+  splashWindow = new BrowserWindow({
+    width: 320,
+    height: 370,
+    show: false,
+    frame: false, // Borderless, no titlebar - THE SPLASH
+    resizable: false,
+    center: true,
+    autoHideMenuBar: true,
+    alwaysOnTop: true,
+    icon: getAppIcon(),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  splashWindow.on('ready-to-show', () => {
+    splashWindow?.show()
+  })
+
+  if (is.dev) {
+    splashWindow.loadURL(`${devUrl}?mode=splash`)
+  } else {
+    splashWindow.loadFile(join(__dirname, '../renderer/index.html'), { query: { mode: 'splash' } })
+  }
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -187,7 +449,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     frame: false,
-    ...(process.platform === 'linux' || process.platform === 'win32' ? { icon } : {}),
+    icon: getAppIcon(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -195,7 +457,7 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
+    // Hidden initially; shown after splash countdown finishes
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -224,7 +486,7 @@ function createDevControlWindow(): void {
     frame: true, // Pure WinForm style window with native titlebar
     resizable: false,
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' || process.platform === 'win32' ? { icon } : {}),
+    icon: getAppIcon(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -275,7 +537,7 @@ function createFullscreenWindow(durationSeconds?: number): void {
     frame: false,
     backgroundColor: '#000000',
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' || process.platform === 'win32' ? { icon } : {}),
+    icon: getAppIcon(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -285,25 +547,26 @@ function createFullscreenWindow(durationSeconds?: number): void {
   fsWindow.setAlwaysOnTop(true, 'screen-saver')
   fsWindow.setMenu(null)
 
-  // Disable System Policies (Task Manager, Lock, Change Password) in Registry
-  setSystemPoliciesDisabled(true).then((success) => {
-    // Only prompt for Admin restart in Production/Build mode (do NOT show in Dev mode)
-    if (!success && !isDevMode) {
-      const choice = dialog.showMessageBoxSync(fsWindow, {
-        type: 'warning',
-        title: 'Administrator Rights Required',
-        message: 'Administrator rights are required to restrict system policies (Disable Task Manager).',
-        detail: 'No registry keys could be updated. Would you like to restart the application as Administrator?',
-        buttons: ['OK', 'Cancel'],
-        defaultId: 0,
-        cancelId: 1
-      })
+  let isSessionCompleted = false
 
-      if (choice === 0) {
-        relaunchAsAdmin()
-      }
+  // Lock window focus & prevent losing focus
+  fsWindow.on('blur', () => {
+    if (!fsWindow.isDestroyed() && !isSessionCompleted) {
+      fsWindow.focus()
+      fsWindow.setAlwaysOnTop(true, 'screen-saver')
     }
   })
+
+  // Prevent closing window before focus duration finishes
+  fsWindow.on('close', (e) => {
+    if (!isSessionCompleted) {
+      e.preventDefault()
+    }
+  })
+
+  // Apply registry restrictions & start low-level keyboard hook silently (NO info box in fullscreen)
+  setSystemPoliciesDisabled(true).catch(() => {})
+  startStrictModeKeyboardHook()
 
   // Intercept and block Alt+Tab, Alt+F4, Task Manager & Win key shortcuts
   const shortcutsToBlock = [
@@ -313,6 +576,9 @@ function createFullscreenWindow(durationSeconds?: number): void {
     'CommandOrControl+Alt+Delete',
     'Meta+Tab',
     'Meta+D',
+    'Meta+X',
+    'Meta+R',
+    'Meta+L',
     'Super'
   ]
 
@@ -341,6 +607,7 @@ function createFullscreenWindow(durationSeconds?: number): void {
 
   if (durationSeconds && durationSeconds > 0) {
     autoCloseTimer = setTimeout(() => {
+      isSessionCompleted = true
       if (!fsWindow.isDestroyed()) {
         fsWindow.close()
       }
@@ -348,7 +615,9 @@ function createFullscreenWindow(durationSeconds?: number): void {
   }
 
   fsWindow.on('closed', () => {
+    isSessionCompleted = true
     if (autoCloseTimer) clearTimeout(autoCloseTimer)
+    stopStrictModeKeyboardHook()
     setSystemPoliciesDisabled(false)
     shortcutsToBlock.forEach((sc) => {
       try {
@@ -370,6 +639,25 @@ function createFullscreenWindow(durationSeconds?: number): void {
     fsWindow.loadFile(join(__dirname, '../renderer/index.html'), { query: { mode: 'fullscreen', duration: String(dur) } })
   }
 }
+
+// IPC Handler for Dev Mode F key toggle windowed mode
+ipcMain.on('toggle-fullscreen-windowed', (event) => {
+  if (!isDevMode && !is.dev) return
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) {
+    const isFull = win.isFullScreen() || win.isKiosk()
+    if (isFull) {
+      win.setKiosk(false)
+      win.setFullScreen(false)
+      win.setResizable(true)
+      win.setSize(1270, 800)
+      win.center()
+    } else {
+      win.setFullScreen(true)
+      win.setKiosk(true)
+    }
+  }
+})
 
 // IPC Handlers for Local Encrypted Focus Sessions Log
 try {
@@ -417,15 +705,7 @@ async function fetchCrowdinLanguages(): Promise<Array<{ code: string; country?: 
   const token = process.env['CROWDIN_PERSONAL_TOKEN']
   const baseUrl = (process.env['CROWDIN_BASE_URL'] || 'https://api.crowdin.com').replace(/\/+$/, '')
 
-  console.log('[Crowdin] Credentials check:', {
-    projectId: projectId || 'MISSING',
-    tokenPresent: Boolean(token),
-    baseUrl,
-    tokenPrefix: token ? `${token.substring(0, 4)}...` : 'NONE'
-  })
-
   if (!projectId || !token) {
-    console.warn('[Crowdin] Missing CROWDIN_PROJECT_ID or CROWDIN_PERSONAL_TOKEN environment variables.')
     return null
   }
 
@@ -435,8 +715,6 @@ async function fetchCrowdinLanguages(): Promise<Array<{ code: string; country?: 
       'Content-Type': 'application/json'
     }
 
-    console.log(`[Crowdin] Fetching language progress for project ${projectId} from ${baseUrl}...`)
-
     const progressRes = await fetch(`${baseUrl}/api/v2/projects/${projectId}/languages/progress`, { headers })
 
     if (progressRes.ok) {
@@ -444,7 +722,7 @@ async function fetchCrowdinLanguages(): Promise<Array<{ code: string; country?: 
       const progressData = Array.isArray(progressJson?.data) ? progressJson.data : []
 
       if (progressData.length > 0) {
-        const languages = progressData.map((entry: any) => {
+        return progressData.map((entry: any) => {
           const data = entry?.data ?? entry
           const langObj = data?.language ?? {}
           const rawId = data?.languageId ?? langObj?.id ?? data?.code ?? 'en'
@@ -463,21 +741,11 @@ async function fetchCrowdinLanguages(): Promise<Array<{ code: string; country?: 
             completion: Number.isFinite(completion) ? Math.max(0, Math.min(100, completion)) : 0
           }
         })
-
-        console.log(`[Crowdin] Successfully fetched ${languages.length} languages from progress API.`)
-        return languages
       }
-    } else {
-      console.error('[Crowdin] Progress API error:', {
-        status: progressRes.status,
-        statusText: progressRes.statusText,
-        body: await progressRes.text().catch(() => '')
-      })
     }
 
     return null
   } catch (e) {
-    console.error('[Crowdin] Exception caught during fetch:', e)
     return null
   }
 }
@@ -485,11 +753,9 @@ async function fetchCrowdinLanguages(): Promise<Array<{ code: string; country?: 
 ipcMain.handle('fetch-languages', async () => {
   const crowdinLanguages = await fetchCrowdinLanguages()
   if (Array.isArray(crowdinLanguages) && crowdinLanguages.length > 0) {
-    console.log(`[Crowdin] Returning ${crowdinLanguages.length} dynamic Crowdin languages.`)
     return crowdinLanguages
   }
 
-  console.warn('[Crowdin] Falling back to local hardcoded languages file (languages.json).')
   const localFile = resolveLocaleFilePath('languages.json')
   const localLanguages = readLocalJsonFile(localFile)
   return Array.isArray(localLanguages) ? localLanguages : []
@@ -507,19 +773,15 @@ async function fetchCrowdinLocaleStrings(langCode: string): Promise<Record<strin
       'Content-Type': 'application/json'
     }
 
-    console.log(`[Crowdin] Fetching translation strings for '${langCode}' (project ${projectId})...`)
-
     // 1. Get project files list
     const filesRes = await fetch(`${baseUrl}/api/v2/projects/${projectId}/files`, { headers }).catch(() => null)
     if (filesRes && filesRes.ok) {
       const filesData = (await filesRes.json())?.data ?? []
-      console.log(`[Crowdin] Found ${filesData.length} project files.`)
 
       for (const item of filesData) {
         const fileObj = item?.data ?? item
         const fileId = fileObj?.id
         if (fileId) {
-          console.log(`[Crowdin] Building file translation for file ${fileId} (${fileObj?.name || 'unknown'}), language: ${langCode}...`)
           const buildRes = await fetch(`${baseUrl}/api/v2/projects/${projectId}/translations/builds/files/${fileId}`, {
             method: 'POST',
             headers,
@@ -534,18 +796,13 @@ async function fetchCrowdinLocaleStrings(langCode: string): Promise<Record<strin
               if (fileRes.ok) {
                 const json = await fileRes.json()
                 if (json && typeof json === 'object') {
-                  console.log(`[Crowdin] Successfully loaded translated JSON for '${langCode}' (file ${fileId}).`)
                   return json
                 }
               }
             }
-          } else {
-            console.warn('[Crowdin] Single file build status:', buildRes.status, await buildRes.text().catch(() => ''))
           }
         }
       }
-    } else if (filesRes) {
-      console.warn('[Crowdin] Project files listing status:', filesRes.status, await filesRes.text().catch(() => ''))
     }
 
     // 2. Fallback: Project-level build creation
@@ -559,46 +816,23 @@ async function fetchCrowdinLocaleStrings(langCode: string): Promise<Record<strin
       const buildJson = await projectBuildRes.json()
       const buildId = buildJson?.data?.id
       if (buildId) {
-        const downloadRes = await fetch(`${baseUrl}/api/v2/projects/${projectId}/translations/builds/${buildId}/download`, { headers })
-        if (downloadRes.ok) {
-          const downloadData = await downloadRes.json()
-          console.log(`[Crowdin] Project build ${buildId} completed. Download URL:`, downloadData?.data?.url ? 'FOUND' : 'NOT FOUND')
-        }
+        await fetch(`${baseUrl}/api/v2/projects/${projectId}/translations/builds/${buildId}/download`, { headers }).catch(() => null)
       }
-    } else {
-      console.warn('[Crowdin] Project build API status:', projectBuildRes.status, await projectBuildRes.text().catch(() => ''))
     }
   } catch (e) {
-    console.warn(`[Crowdin] Could not fetch dynamic strings for '${langCode}':`, e)
+    // Silent catch
   }
 
   return null
 }
 
-function logLocaleComparison(langCode: string, enKeys: string[], targetStrings: Record<string, string>): void {
-  const targetKeys = Object.keys(targetStrings || {})
-  const missingKeys = enKeys.filter((k) => !targetKeys.includes(k) || !targetStrings[k])
-  const presentKeys = enKeys.filter((k) => targetKeys.includes(k) && Boolean(targetStrings[k]))
-
-  console.log(`[i18n] === Locale Strings Report for '${langCode}' ===`)
-  console.log(`[i18n] Total Base (en.json) Keys: ${enKeys.length}`)
-  console.log(`[i18n] Present & Translated Keys (${presentKeys.length}):`, targetStrings)
-  if (missingKeys.length > 0) {
-    console.warn(`[i18n] Missing / Un-translated Keys (${missingKeys.length}):`, missingKeys)
-  } else {
-    console.log(`[i18n] All base keys are translated for '${langCode}'!`)
-  }
-  console.log(`[i18n] ==============================================`)
-}
-
 ipcMain.handle('fetch-locale-strings', async (_, langCode: string) => {
   const normalizedCode = String(langCode || 'en').trim() || 'en'
+  currentAppLanguage = normalizedCode
   const enLocalFile = resolveLocaleFilePath('en.json')
   const enParsed = (readLocalJsonFile(enLocalFile) as Record<string, string>) || {}
-  const enKeys = Object.keys(enParsed)
 
   if (normalizedCode === 'en') {
-    logLocaleComparison('en', enKeys, enParsed)
     return enParsed
   }
 
@@ -608,14 +842,12 @@ ipcMain.handle('fetch-locale-strings', async (_, langCode: string) => {
   const localParsed = readLocalJsonFile(specificLocalFile) as Record<string, string> | null
   if (localParsed && typeof localParsed === 'object') {
     rawTargetStrings = localParsed
-    console.log(`[i18n] Loaded '${normalizedCode}' from local file: ${specificLocalFile}`)
   }
 
   if (!rawTargetStrings) {
     const crowdinStrings = (await fetchCrowdinLocaleStrings(normalizedCode)) as Record<string, string> | null
     if (crowdinStrings && typeof crowdinStrings === 'object') {
       rawTargetStrings = crowdinStrings
-      console.log(`[i18n] Loaded '${normalizedCode}' from Crowdin API.`)
       saveLocaleFileToLanguages(`${normalizedCode}.json`, crowdinStrings)
     }
   }
@@ -629,22 +861,18 @@ ipcMain.handle('fetch-locale-strings', async (_, langCode: string) => {
         const remoteJson = (await res.json()) as Record<string, string>
         if (remoteJson && typeof remoteJson === 'object') {
           rawTargetStrings = remoteJson
-          console.log(`[i18n] Loaded '${normalizedCode}' from remote niteaassets repository.`)
           saveLocaleFileToLanguages(`${normalizedCode}.json`, remoteJson)
         }
       }
     } catch (e) {
-      console.error(`Failed to fetch locale strings for ${normalizedCode}:`, e)
+      // Silent catch
     }
   }
 
   if (rawTargetStrings) {
-    logLocaleComparison(normalizedCode, enKeys, rawTargetStrings)
     return { ...enParsed, ...rawTargetStrings }
   }
 
-  console.warn(`[i18n] No strings found for '${normalizedCode}'. Using en.json fallbacks entirely.`)
-  logLocaleComparison(normalizedCode, enKeys, {})
   return enParsed
 })
 
@@ -778,6 +1006,27 @@ ipcMain.on('start-download-update', () => {
   }
 })
 
+async function downloadLanguageUpdatesOnSplash(): Promise<void> {
+  try {
+    // 1. Refresh dynamic languages catalog
+    const crowdinLangs = await fetchCrowdinLanguages()
+    if (Array.isArray(crowdinLangs) && crowdinLangs.length > 0) {
+      saveLocaleFileToLanguages('languages.json', crowdinLangs)
+    }
+
+    // 2. Refresh active language and supported languages from Crowdin
+    const targetLangs = ['it', 'de', 'es', 'pt', 'ru', 'ar', 'en']
+    for (const lang of targetLangs) {
+      const strings = await fetchCrowdinLocaleStrings(lang)
+      if (strings && typeof strings === 'object' && Object.keys(strings).length > 0) {
+        saveLocaleFileToLanguages(`${lang}.json`, strings)
+      }
+    }
+  } catch (e) {
+    // Silent catch
+  }
+}
+
 // App lifecycle
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
@@ -786,9 +1035,48 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  ipcMain.on('ping', () => console.log('pong'))
+  // 1. Create small borderless native Splash Window first
+  createSplashWindow()
 
+  // 2. Download language updates on every splashscreen launch
+  const languageDownloadPromise = downloadLanguageUpdatesOnSplash()
+
+  // 3. Create Main Window in background (hidden)
   createWindow()
+
+  // 4. Splash Screen minimum 5s timer & loading phase
+  const splashStartTime = Date.now()
+  const MIN_SPLASH_DURATION = 5000
+
+  setTimeout(async () => {
+    // Wait for language download or 4.5s max timeout to prevent blocking splash UI
+    await Promise.race([
+      languageDownloadPromise,
+      new Promise((res) => setTimeout(res, 4500))
+    ]).catch(() => {})
+
+    const elapsed = Date.now() - splashStartTime
+    const remaining = Math.max(0, MIN_SPLASH_DURATION - elapsed)
+
+    setTimeout(() => {
+      // Check Registry & Admin status AFTER the 5s splash timer finishes ONLY IF strict mode is enabled
+      const strictEnabled = isStrictModeEnabled()
+      if (strictEnabled && process.platform === 'win32') {
+        const canProceed = checkAdminAndRegistryWithPrompt(splashWindow)
+        if (!canProceed) {
+          return
+        }
+      }
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show()
+      }
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close()
+        splashWindow = null
+      }
+    }, remaining)
+  }, 0)
 
   // Open Dev Control Panel in Dev Mode
   if (isDevMode) {
@@ -798,6 +1086,14 @@ app.whenReady().then(() => {
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+ipcMain.handle('validate-strict-mode-admin', (_, enabled: boolean) => {
+  saveStrictModeSetting(enabled)
+  if (!enabled) {
+    return true
+  }
+  return checkAdminAndRegistryWithPrompt(mainWindow)
 })
 
 app.on('will-quit', () => {

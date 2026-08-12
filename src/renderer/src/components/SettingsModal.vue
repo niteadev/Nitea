@@ -6,6 +6,7 @@ import { Sun, Moon, Check, Settings, Heart, ChevronDown } from '@lucide/vue'
 import * as flags from 'country-flag-icons/string/3x2'
 import languageCatalog from '../languages/languages.json'
 import ModalDialog from './ModalDialog.vue'
+import StrictWarningModal from './StrictWarningModal.vue'
 
 export interface LanguageItem {
   code: string
@@ -56,7 +57,7 @@ const fetchLanguagesList = async (): Promise<void> => {
       return
     }
   } catch (e) {
-    console.error('Error fetching languages list:', e)
+    // Ignore error
   }
 
   languages.value = languageCatalog as LanguageItem[]
@@ -90,9 +91,26 @@ const handleCountdownInput = (event: Event): void => {
   emit('update:countdownSeconds', Math.max(1, Math.min(60, val)))
 }
 
+const isStrictWarningOpen = ref(false)
+
 const toggleStrictMode = (event: Event): void => {
   const target = event.target as HTMLInputElement
-  emit('update:strictMode', target.checked)
+  if (target.checked) {
+    target.checked = false
+    isStrictWarningOpen.value = true
+  } else {
+    emit('update:strictMode', false)
+  }
+}
+
+const confirmStrictMode = (): void => {
+  isStrictWarningOpen.value = false
+  emit('update:strictMode', true)
+}
+
+const cancelStrictMode = (): void => {
+  isStrictWarningOpen.value = false
+  emit('update:strictMode', false)
 }
 
 const selectLanguage = (code: string): void => {
@@ -248,6 +266,14 @@ const selectLanguage = (code: string): void => {
       </div>
     </div>
   </ModalDialog>
+
+  <!-- Strict Mode Warning Dialog Component -->
+  <StrictWarningModal
+    :is-open="isStrictWarningOpen"
+    :translations="translations"
+    @confirm="confirmStrictMode"
+    @cancel="cancelStrictMode"
+  />
 </template>
 
 <style scoped>
@@ -635,5 +661,44 @@ input:checked + .toggle-slider:before {
 
 .heart-icon {
   color: #ec4899;
+}
+
+/* Strict Mode No Mercy Warning Card */
+.strict-warning-card {
+  margin-top: 4px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.strict-warning-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.warning-icon {
+  width: 16px;
+  height: 16px;
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.warning-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ef4444;
+  letter-spacing: 0.2px;
+}
+
+.warning-body {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ev-c-text-2);
 }
 </style>

@@ -28,6 +28,8 @@ const dependenciesList = [
   { name: 'vue', version: pkg.devDependencies['vue'] || '^3.4.15' },
   { name: 'electron', version: pkg.devDependencies['electron'] || '^28.2.0' },
   { name: '@lucide/vue', version: pkg.dependencies['@lucide/vue'] || '^1.31.0' },
+  { name: 'country-flag-icons', version: pkg.dependencies['country-flag-icons'] || '^1.6.20' },
+  { name: '@crowdin/cli', version: pkg.devDependencies['@crowdin/cli'] || '^4.15.0' },
   { name: 'electron-updater', version: pkg.dependencies['electron-updater'] || '^6.8.9' },
   { name: 'electron-vite', version: pkg.devDependencies['electron-vite'] || '^2.0.0' },
   { name: 'electron-builder', version: pkg.devDependencies['electron-builder'] || '^24.9.1' },

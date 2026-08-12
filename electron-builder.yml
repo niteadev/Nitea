@@ -4,6 +4,8 @@ directories:
   buildResources: build
 files:
   - '!**/.vscode/*'
+  - '!**/.agents/*'
+  - '!**/.gemini/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
@@ -16,6 +18,7 @@ extraResources:
     to: languages
 win:
   executableName: Nitea
+  icon: build/icon.png
   target:
     - nsis
   verifyUpdateCodeSignature: false
@@ -24,7 +27,9 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  createStartMenuShortcut: true
 mac:
+  icon: build/icon.icns
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.

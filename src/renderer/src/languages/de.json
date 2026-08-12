@@ -38,5 +38,10 @@
   "downloading_update": "Downloading Update...",
   "postpone": "Postpone",
   "download_and_install": "Download and install",
-  "update_installing_status": "The update will be installed after download..."
+  "update_installing_status": "The update will be installed after download...",
+  "loading_settings": "Loading settings...",
+  "checking_for_updates": "Checking for updates...",
+  "registry_update_title": "Administrator Rights Required",
+  "registry_update_message": "Administrator rights are required to restrict system policies (Disable Task Manager, Win key, Alt+Tab).",
+  "registry_update_detail": "No registry keys could be updated. The application will restart as Administrator."
 }

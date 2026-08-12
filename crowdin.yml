@@ -7,15 +7,12 @@ api_token_env: CROWDIN_PERSONAL_TOKEN
 # Base branch configuration
 base_path: .
 base_url: https://api.crowdin.com
-branch: master
-
 preserve_hierarchy: true
 
 # File mapping configuration
 files:
   - source: /src/renderer/src/languages/en.json
     translation: /src/renderer/src/languages/%two_letters_code%.json
-    dest: /src/renderer/src/languages/en.json
     type: json
     multilingual: false
 
