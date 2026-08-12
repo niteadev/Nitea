@@ -29,7 +29,7 @@
   "dev_warning_text": "You are running a development preview / non-official build of this application.",
   "dev_warning_risk_1": "Risk of unverified code execution or arbitrary code injection.",
   "dev_warning_risk_2": "Unstable features, debug logs, and potential data exposure.",
-  "dev_warning_risk_3": "Lack of official cryptographic signature and release verification.",
+  "dev_warning_risk_3": " ",
   "dev_warning_note": "Please use official releases for production environments.",
   "ok": "OK",
   "update_available": "Update Available",
@@ -38,5 +38,18 @@
   "downloading_update": "Downloading Update...",
   "postpone": "Postpone",
   "download_and_install": "Download and install",
-  "update_installing_status": "The update will be installed after download..."
+  "update_installing_status": "The update will be installed after download...",
+  "loading_settings": "Loading settings...",
+  "checking_for_updates": "Checking for updates...",
+  "registry_update_title": "Administrator Rights Required",
+  "registry_update_message": "Administrator rights are required to restrict system policies (Disable Task Manager, Win key, Alt+Tab).",
+  "registry_update_detail": "No registry keys could be updated. The application will restart as Administrator.",
+  "strict_mode_warning_title": "Strict mode has no mercy",
+  "strict_mode_warning_text": "Once enabled, you will not be able to exit the fullscreen window until the countdown finishes. The only way to exit prematurely is to forcefully restart your PC. Alt+F4, Task Manager, and system shortcuts are completely disabled.",
+  "acknowledged_continue": "Acknowledged, continue!",
+  "strict_mode_cancel": "Cancel",
+  "setting_saved": "Setting Saved",
+  "setting_update_failed": "Setting Update Failed",
+  "settings_has_been_updated": "Settings has been updated",
+  "settings_save_error": "Settings save error"
 }
