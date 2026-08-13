@@ -12,6 +12,7 @@ preserve_hierarchy: true
 # File mapping configuration
 files:
   - source: /src/renderer/src/languages/en.json
+    dest: /en.json
     translation: /src/renderer/src/languages/%two_letters_code%.json
     type: json
     multilingual: false
