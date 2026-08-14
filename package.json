@@ -1,10 +1,10 @@
 {
   "name": "electron-app",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Unleash Your Potential. Master Your Focus.",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "oxideve",
+  "homepage": "https://nitea.cc",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint . --ext .js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts,.vue --fix",

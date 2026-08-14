@@ -1,3 +1,4 @@
+<!-- eslint-disable prettier/prettier -->
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { Settings, Loader2, X, Clock, Check } from '@lucide/vue'
@@ -379,13 +380,15 @@ const switchToStandardMode = (): void => {
   window.electron.ipcRenderer.send('switch-to-standard-mode')
 }
 
-// Keyboard listener for Fullscreen mode (Alt+F4 blocked completely; in dev or if strictMode is disabled, press 'X' to close; in DEV MODE ONLY, press 'F' for windowed mode)
+// Keyboard listener for Fullscreen mode (Alt+F4 blocked only if strictMode is enabled; in dev or if strictMode is disabled, press 'X' to close; in DEV MODE ONLY, press 'F' for windowed mode)
 const handleKeyDown = (e: KeyboardEvent): void => {
-  // Block Alt+F4 completely
-  if ((e.altKey && (e.key === 'F4' || e.key === 'f4')) || (e.code === 'F4' && e.altKey)) {
-    e.preventDefault()
-    e.stopPropagation()
-    return
+  // Block Alt+F4 only when strict mode is active
+  if (strictMode.value) {
+    if ((e.altKey && (e.key === 'F4' || e.key === 'f4')) || (e.code === 'F4' && e.altKey)) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
   }
 
   if ((!strictMode.value || isDev.value) && (e.key === 'x' || e.key === 'X')) {
