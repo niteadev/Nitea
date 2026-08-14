@@ -123,6 +123,9 @@ To package Nitea into production-ready standalone installers or executables for 
 # Build for Windows (NSIS installer)
 npm run build:win
 
+# Build for Microsoft Store (AppX package)
+npm run build:mstore
+
 # Build for macOS (DMG package)
 npm run build:mac
 

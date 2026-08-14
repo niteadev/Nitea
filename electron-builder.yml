@@ -21,6 +21,7 @@ win:
   icon: build/icon.png
   target:
     - nsis
+    - appx
   verifyUpdateCodeSignature: false
 nsis:
   installerIcon: build/installerIcon.ico
@@ -31,6 +32,15 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
   createStartMenuShortcut: true
+appx:
+  applicationId: com.nitea.app
+  identityName: oxideve.Nitea
+  publisher: CN=6AB77E31-6990-4692-BCC0-2DA821263E3C
+  publisherDisplayName: oxideve
+  displayName: Nitea
+  artifactName: ${name}-${version}.${ext}
+  showNameOnTiles: true
+  backgroundColor: '#18181b'
 mac:
   icon: build/icon.icns
   entitlementsInherit: build/entitlements.mac.plist
