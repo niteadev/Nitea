@@ -6,6 +6,12 @@ out
 .env
 .env.local
 .agents/
+.claude/
 .gemini/
+.cursor/
+.cursorrules
+.windsurfrules
+.clinerules
+skills-lock.json
 .system_generated/
 .brain/
