@@ -54,9 +54,8 @@ Download the latest version for your platform from the [GitHub Releases](https:/
 
 | Platform | Format | Architecture |
 |---|---|---|
-| **Windows** | `.exe` (NSIS Installer) | x64 / ARM64 |
-| **macOS** | `.dmg` | Intel / Apple Silicon (Universal) |
-| **Linux** | `.AppImage`, `.deb`, `snap` | x64 |
+| **Windows** | `.exe` (NSIS Installer) | x64 |
+
 
 ---
 
