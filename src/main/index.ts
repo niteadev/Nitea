@@ -578,11 +578,13 @@ function initAutoUpdater(targetWindow: BrowserWindow): void {
 }
 
 function createFullscreenWindow(durationSeconds?: number): void {
+  const isStrict = isStrictModeEnabled()
+
   const fsWindow = new BrowserWindow({
     fullscreen: true,
-    kiosk: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
+    kiosk: isStrict,
+    alwaysOnTop: isStrict,
+    skipTaskbar: isStrict,
     frame: false,
     backgroundColor: '#000000',
     autoHideMenuBar: true,
@@ -593,31 +595,35 @@ function createFullscreenWindow(durationSeconds?: number): void {
     }
   })
 
-  fsWindow.setAlwaysOnTop(true, 'screen-saver')
+  if (isStrict) {
+    fsWindow.setAlwaysOnTop(true, 'screen-saver')
+  }
   fsWindow.setMenu(null)
 
   let isSessionCompleted = false
 
-  // Lock window focus & prevent losing focus
-  fsWindow.on('blur', () => {
-    if (!fsWindow.isDestroyed() && !isSessionCompleted) {
-      fsWindow.focus()
-      fsWindow.setAlwaysOnTop(true, 'screen-saver')
-    }
-  })
+  // Lock window focus & prevent losing focus only if strict mode is enabled
+  if (isStrict) {
+    fsWindow.on('blur', () => {
+      if (!fsWindow.isDestroyed() && !isSessionCompleted) {
+        fsWindow.focus()
+        fsWindow.setAlwaysOnTop(true, 'screen-saver')
+      }
+    })
 
-  // Prevent closing window before focus duration finishes
-  fsWindow.on('close', (e) => {
-    if (!isSessionCompleted) {
-      e.preventDefault()
-    }
-  })
+    // Prevent closing window before focus duration finishes
+    fsWindow.on('close', (e) => {
+      if (!isSessionCompleted) {
+        e.preventDefault()
+      }
+    })
 
-  // Apply registry restrictions & start low-level keyboard hook silently (NO info box in fullscreen)
-  setSystemPoliciesDisabled(true).catch(() => {})
-  startStrictModeKeyboardHook()
+    // Apply registry restrictions & start low-level keyboard hook silently (NO info box in fullscreen)
+    setSystemPoliciesDisabled(true).catch(() => {})
+    startStrictModeKeyboardHook()
+  }
 
-  // Intercept and block Alt+Tab, Alt+F4, Task Manager & Win key shortcuts
+  // Intercept and block Alt+Tab, Alt+F4, Task Manager & Win key shortcuts only if strict mode is enabled
   const shortcutsToBlock = [
     'Alt+Tab',
     'Alt+F4',
@@ -631,15 +637,17 @@ function createFullscreenWindow(durationSeconds?: number): void {
     'Super'
   ]
 
-  shortcutsToBlock.forEach((sc) => {
-    try {
-      globalShortcut.register(sc, () => {
-        // Block shortcut action
-      })
-    } catch (e) {
-      // Ignore unregisterable OS shortcuts
-    }
-  })
+  if (isStrict) {
+    shortcutsToBlock.forEach((sc) => {
+      try {
+        globalShortcut.register(sc, () => {
+          // Block shortcut action
+        })
+      } catch (e) {
+        // Ignore unregisterable OS shortcuts
+      }
+    })
+  }
 
   // Auto-close fullscreen window after durationSeconds
   let autoCloseTimer: ReturnType<typeof setTimeout> | null = null
@@ -666,15 +674,17 @@ function createFullscreenWindow(durationSeconds?: number): void {
   fsWindow.on('closed', () => {
     isSessionCompleted = true
     if (autoCloseTimer) clearTimeout(autoCloseTimer)
-    stopStrictModeKeyboardHook()
-    setSystemPoliciesDisabled(false)
-    shortcutsToBlock.forEach((sc) => {
-      try {
-        globalShortcut.unregister(sc)
-      } catch (e) {
-        // ignore error
-      }
-    })
+    if (isStrict) {
+      stopStrictModeKeyboardHook()
+      setSystemPoliciesDisabled(false)
+      shortcutsToBlock.forEach((sc) => {
+        try {
+          globalShortcut.unregister(sc)
+        } catch (e) {
+          // ignore error
+        }
+      })
+    }
     BrowserWindow.getAllWindows().forEach((win) => {
       if (!win.isDestroyed()) {
         win.webContents.send('reset-start-button')
