@@ -29,7 +29,7 @@
   "dev_warning_text": "Stai utilizzando una versione di sviluppo o una build non ufficiale di questa applicazione.",
   "dev_warning_risk_1": "Rischio di esecuzione di codice non verificato o iniezione di codice arbitrario.",
   "dev_warning_risk_2": "Funzionalità instabili, log di debug e potenziale esposizione dei dati.",
-  "dev_warning_risk_3": "Assenza di firma crittografica ufficiale e di verifica della release.",
+  "dev_warning_risk_3": " ",
   "dev_warning_note": "Si prega di utilizzare le versioni ufficiali per gli ambienti di produzione.",
   "ok": "OK",
   "update_available": "Aggiornamento disponibile",
