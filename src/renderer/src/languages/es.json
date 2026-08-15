@@ -29,7 +29,7 @@
   "dev_warning_text": "You are running a development preview / non-official build of this application.",
   "dev_warning_risk_1": "Risk of unverified code execution or arbitrary code injection.",
   "dev_warning_risk_2": "Unstable features, debug logs, and potential data exposure.",
-  "dev_warning_risk_3": "Lack of official cryptographic signature and release verification.",
+  "dev_warning_risk_3": " ",
   "dev_warning_note": "Please use official releases for production environments.",
   "ok": "OK",
   "update_available": "Update Available",
